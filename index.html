@@ -1,0 +1,4291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+  <title>TSFF Torrent Control</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #061018;
+      --panel: rgba(10, 24, 34, 0.92);
+      --panel-soft: rgba(7, 18, 27, 0.92);
+      --line: rgba(96, 219, 255, 0.16);
+      --text: #ecf7fd;
+      --muted: #95afbf;
+      --accent: #67ebd5;
+      --accent-2: #49aaff;
+      --warn: #ffd166;
+      --danger: #ff8d8d;
+      --ok: #8ff5c8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(73, 170, 255, 0.16), transparent 28%),
+        radial-gradient(circle at left bottom, rgba(103, 235, 213, 0.11), transparent 24%),
+        linear-gradient(160deg, #02070b, var(--bg) 58%, #0a1f2c);
+    }
+
+    .shell {
+      width: min(1400px, 100%);
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+      padding: 22px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 1.4fr 0.8fr;
+      align-items: start;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      width: fit-content;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(103, 235, 213, 0.14);
+      color: var(--accent);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 14px 0 8px;
+      font-size: clamp(34px, 6vw, 58px);
+      line-height: 0.96;
+      letter-spacing: -0.05em;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .mini-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .mini-card {
+      background: var(--panel-soft);
+      border: 1px solid rgba(73, 170, 255, 0.14);
+      border-radius: 18px;
+      padding: 14px;
+    }
+
+    .mini-card .label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .mini-card strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 24px;
+    }
+
+    .sync-panel {
+      padding: 18px 20px 16px;
+    }
+
+    .sync-shell {
+      display: grid;
+      gap: 16px;
+    }
+
+    .sync-topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+
+    .sync-heading {
+      display: grid;
+      gap: 8px;
+    }
+
+    .sync-heading h2 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .sync-heading p {
+      max-width: 760px;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .sync-runtime-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: #0a1620;
+      border: 1px solid rgba(103, 235, 213, 0.16);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .sync-runtime-pill strong {
+      color: var(--text);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+    }
+
+    .sync-metrics {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .sync-metric {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)),
+        #09131c;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .sync-metric .label {
+      display: block;
+      margin-bottom: 6px;
+      color: #7f98a8;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .sync-metric strong {
+      display: block;
+      font-size: 17px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .sync-metric .sub {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .sync-progress-card {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: #09141d;
+      border: 1px solid rgba(73, 170, 255, 0.14);
+      display: grid;
+      gap: 10px;
+    }
+
+    .sync-progress-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    .sync-progress-head strong {
+      font-size: 20px;
+      letter-spacing: -0.03em;
+    }
+
+    .sync-progress-head span {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .sync-progress-bar {
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .sync-progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #69efd6, #4ba8ff 72%, #88f4c8);
+      transition: width 200ms ease;
+    }
+
+    .sync-progress-meta {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: 1.3fr 0.7fr;
+      align-items: start;
+    }
+
+    .sync-path {
+      min-height: 46px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.26);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      color: #c9d9e4;
+      font-size: 12px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .sync-path code {
+      color: #d9f6ff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+
+    .sync-breakdown {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sync-chip {
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .sync-chip .label {
+      display: block;
+      margin-bottom: 4px;
+      color: #7f98a8;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .sync-chip strong {
+      font-size: 14px;
+      letter-spacing: -0.01em;
+    }
+
+    .toolbar,
+    .form-grid,
+    .login-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
+
+    .field,
+    .status-box,
+    .list-shell {
+      background: var(--panel-soft);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 18px;
+      padding: 14px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      background: rgba(3, 10, 16, 0.92);
+      color: var(--text);
+      font: inherit;
+      padding: 12px 14px;
+    }
+
+    textarea {
+      min-height: 132px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    input[type="file"] {
+      padding: 10px;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #031018;
+      font: inherit;
+      font-weight: 800;
+      padding: 12px 16px;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    button.warn {
+      background: linear-gradient(135deg, #ffd166, #ffaf4d);
+    }
+
+    button.danger {
+      background: linear-gradient(135deg, #ff9d9d, #ff6767);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    .span-12 { grid-column: span 12; }
+    .span-8 { grid-column: span 8; }
+    .span-6 { grid-column: span 6; }
+    .span-4 { grid-column: span 4; }
+    .span-3 { grid-column: span 3; }
+    .span-2 { grid-column: span 2; }
+
+    .status-box {
+      white-space: pre-wrap;
+      color: var(--muted);
+      min-height: 56px;
+    }
+
+    .status-box.ok { color: var(--ok); border-color: rgba(143, 245, 200, 0.25); }
+    .status-box.error { color: #ffd5d5; border-color: rgba(255, 141, 141, 0.25); }
+
+    .toolbar {
+      align-items: end;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .list-shell {
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    table {
+      width: 100%;
+      min-width: 1320px;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+
+    .torrent-table col.name-col { width: 27%; }
+    .torrent-table col.size-col { width: 8%; }
+    .torrent-table col.progress-col { width: 9%; }
+    .torrent-table col.status-col { width: 11%; }
+    .torrent-table col.down-col { width: 8%; }
+    .torrent-table col.up-col { width: 8%; }
+    .torrent-table col.seeds-col { width: 6%; }
+    .torrent-table col.peers-col { width: 6%; }
+    .torrent-table col.ratio-col { width: 6%; }
+    .torrent-table col.category-col { width: 7%; }
+    .torrent-table col.actions-col { width: 8%; }
+
+    th,
+    td {
+      padding: 9px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .torrent-name {
+      font-weight: 700;
+      line-height: 1.2;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+
+    .torrent-sub {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: normal;
+    }
+
+    .torrent-sub.tight {
+      margin-top: 2px;
+    }
+
+    .progress {
+      width: min(100%, 140px);
+      height: 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.07);
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .progress > span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+
+    .pill {
+      display: inline-flex;
+      margin-top: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .pill.need-seed {
+      background: rgba(255, 209, 102, 0.14);
+      color: #ffe2a2;
+      cursor: help;
+    }
+
+    .pill.sync-awaiting {
+      background: rgba(73, 170, 255, 0.14);
+      color: #cae7ff;
+    }
+
+    .pill.sync-working {
+      background: rgba(103, 235, 213, 0.14);
+      color: #cffff3;
+    }
+
+    .pill.sync-ok {
+      background: rgba(143, 245, 200, 0.16);
+      color: #c8ffdf;
+    }
+
+    .pill.sync-bad {
+      background: rgba(255, 141, 141, 0.16);
+      color: #ffd0d0;
+    }
+
+    .torrent-pill-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 6px;
+    }
+
+    .section-row td {
+      padding: 14px 2px 8px;
+      border-bottom: 0;
+    }
+
+    .section-block {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #bfd4e1;
+    }
+
+    .section-count {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .peer-tooltip {
+      position: fixed;
+      z-index: 50;
+      min-width: 240px;
+      max-width: min(420px, calc(100vw - 24px));
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 209, 102, 0.26);
+      background: rgba(5, 12, 18, 0.96);
+      box-shadow: 0 22px 50px rgba(0, 0, 0, 0.42);
+      color: var(--text);
+      pointer-events: none;
+      white-space: normal;
+    }
+
+    .peer-tooltip-title {
+      margin: 0 0 7px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #ffe2a2;
+    }
+
+    .peer-tooltip-body {
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #dce8ef;
+    }
+
+    .peer-tooltip-row {
+      display: grid;
+      gap: 2px;
+    }
+
+    .peer-tooltip-meta {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .actions button {
+      padding: 0;
+      width: 30px;
+      height: 30px;
+      font-size: 11px;
+      border-radius: 9px;
+      font-weight: 700;
+      min-height: 30px;
+      line-height: 1.05;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .actions button svg {
+      width: 14px;
+      height: 14px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+
+    .actions button.warn svg.bin-fill {
+      fill: currentColor;
+      stroke: none;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 36px 12px 18px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 7, 11, 0.74);
+      backdrop-filter: blur(10px);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      z-index: 20;
+    }
+
+    .modal-card {
+      width: min(1100px, 100%);
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+      background: rgba(6, 16, 24, 0.98);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.46);
+      padding: 22px;
+      display: grid;
+      gap: 18px;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 16px;
+    }
+
+    .modal-head h2 {
+      margin: 4px 0 6px;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      font-weight: 700;
+      font-family: "Avenir Next", ui-sans-serif, sans-serif;
+    }
+
+    .modal-head p {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #8da7b8;
+    }
+
+    .modal-head .eyebrow {
+      padding: 4px 8px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
+
+    .modal-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
+
+    .entry-shell {
+      background: var(--panel-soft);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 18px;
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .entry-section {
+      display: grid;
+      gap: 10px;
+    }
+
+    .entry-section h3 {
+      margin: 0;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      text-transform: none;
+      color: #b6cad7;
+      font-weight: 600;
+    }
+
+    .entry-row {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) auto;
+      align-items: center;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .entry-path {
+      min-width: 0;
+    }
+
+    .entry-path strong,
+    .entry-path span {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+
+    .entry-path strong {
+      font-size: 13px;
+      line-height: 1.45;
+      font-weight: 600;
+    }
+
+    .entry-path span {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .entry-rename {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .entry-rename input {
+      min-width: 0;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .picker-shell {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+      align-items: start;
+    }
+
+    .picker-panel {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 18px;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      min-height: 320px;
+    }
+
+    .picker-breadcrumbs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .crumb {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .picker-list {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .picker-item {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      padding: 9px 11px;
+      cursor: pointer;
+      text-align: left;
+      font-weight: 500;
+    }
+
+    .picker-item.current {
+      border-color: rgba(103, 235, 213, 0.38);
+      background: rgba(103, 235, 213, 0.08);
+    }
+
+    .picker-item.file {
+      opacity: 0.74;
+      cursor: default;
+    }
+
+    .picker-icon {
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: #79c8d8;
+      text-transform: uppercase;
+      min-width: 38px;
+    }
+
+    .picker-label {
+      min-width: 0;
+    }
+
+    .picker-label strong,
+    .picker-label .picker-meta {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+
+    .picker-label strong {
+      font-size: 13px;
+      line-height: 1.3;
+      font-weight: 600;
+      letter-spacing: 0;
+    }
+
+    .picker-meta {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .picker-open {
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .compact-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .inline-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 2px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .inline-check input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--accent-2);
+    }
+
+    .compact-row button {
+      padding: 8px 11px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 11px;
+    }
+
+    #manageCurrentLocation,
+    #manageSelectedLocation,
+    #manageCustomLocation,
+    #addSelectedLocation,
+    #addCustomLocation,
+    .entry-rename input {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      letter-spacing: 0;
+    }
+
+    #manageModal .field label,
+    #addMagnetModal .field label {
+      font-size: 12px;
+      letter-spacing: 0.01em;
+      color: #a9bfce;
+    }
+
+    #manageModal .status-box,
+    #addMagnetModal .status-box {
+      min-height: 44px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    #manageCloseButton,
+    #addMagnetCloseButton {
+      padding: 8px 11px;
+      font-size: 12px;
+      border-radius: 11px;
+      font-weight: 700;
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .mini-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .sync-metrics,
+      .sync-progress-meta,
+      .sync-breakdown {
+        grid-template-columns: 1fr;
+      }
+
+      .span-8,
+      .span-6,
+      .span-4,
+      .span-3,
+      .span-2 {
+        grid-column: span 12;
+      }
+
+      table,
+      thead,
+      tbody,
+      tr,
+      th,
+      td {
+        display: block;
+      }
+
+      thead {
+        display: none;
+      }
+
+      tr {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 10px 0;
+      }
+
+      td {
+        border-bottom: 0;
+        padding: 8px 0;
+      }
+
+      .modal-head,
+      .entry-row {
+        grid-template-columns: 1fr;
+      }
+
+      .picker-shell {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="panel hero">
+      <div class="stack">
+        <span class="eyebrow">Private Torrent Surface</span>
+        <h1>TSFF Torrent Control</h1>
+        <p>This page talks directly to the qBittorrent API on the TSFF VM. It bypasses the broken stock WebUI while keeping the same download and seeding backend.</p>
+      </div>
+      <div class="mini-grid">
+        <article class="mini-card">
+          <span class="label">Session</span>
+          <strong id="sessionState">Not logged in</strong>
+        </article>
+        <article class="mini-card">
+          <span class="label">Seed Requests</span>
+          <strong id="seedDemandCount">0</strong>
+        </article>
+        <article class="mini-card">
+          <span class="label">Total Torrents</span>
+          <strong id="torrentCount">0</strong>
+        </article>
+      </div>
+    </section>
+
+    <section id="gcsSyncPanel" class="panel sync-panel">
+      <div class="sync-shell">
+        <div class="sync-topline">
+          <div class="sync-heading">
+            <span class="eyebrow">Live Sync Bucket</span>
+            <h2>Bucket Backup Control</h2>
+            <p>Direct VM-to-bucket backup. This should show what it is doing right now: direction, active path, progress, speed, and the last completed result.</p>
+          </div>
+          <div class="sync-runtime-pill">
+            <span>Runtime</span>
+            <strong id="syncRuntimeState">Idle</strong>
+          </div>
+        </div>
+
+        <div class="sync-metrics">
+          <article class="sync-metric">
+            <span class="label">Bucket</span>
+            <strong id="syncBucketState">Not configured</strong>
+            <span class="sub" id="syncAuthState">Checking auth...</span>
+          </article>
+          <article class="sync-metric">
+            <span class="label">Current speed</span>
+            <strong id="syncSpeedState">0 B/s</strong>
+            <span class="sub" id="syncDirectionState">Idle</span>
+          </article>
+          <article class="sync-metric">
+            <span class="label">Confirmed on bucket</span>
+            <strong id="syncBytesState">0 B / 0 B</strong>
+            <span class="sub" id="syncFilesState">0 / 0 files</span>
+          </article>
+          <article class="sync-metric">
+            <span class="label">Current pair</span>
+            <strong id="syncPairState">Downloads</strong>
+            <span class="sub" id="syncPhaseState">Waiting</span>
+          </article>
+          <article class="sync-metric">
+            <span class="label">Last run</span>
+            <strong id="syncLastRun">Never</strong>
+            <span class="sub" id="syncLastResult">No sync completed yet</span>
+          </article>
+        </div>
+
+        <div class="sync-progress-card">
+          <div class="sync-progress-head">
+            <strong id="syncPercentState">0.0%</strong>
+            <span id="syncProgressLabel">No active transfer</span>
+          </div>
+          <div class="sync-progress-bar">
+            <div id="syncProgressFill" class="sync-progress-fill"></div>
+          </div>
+          <div class="sync-progress-meta">
+            <div class="sync-path" id="syncCurrentPath">No active file or folder path yet.</div>
+            <div class="sync-breakdown">
+              <div class="sync-chip">
+                <span class="label">Current item</span>
+                <strong id="syncCurrentItemSize">0 B</strong>
+              </div>
+              <div class="sync-chip">
+                <span class="label">Elapsed</span>
+                <strong id="syncElapsedState">0s</strong>
+              </div>
+              <div class="sync-chip">
+                <span class="label">Downloads pair</span>
+                <strong id="syncDownloadsSummary">Waiting</strong>
+              </div>
+              <div class="sync-chip">
+                <span class="label">Config pair</span>
+                <strong id="syncConfigSummary">Waiting</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <section id="loginPanel" class="panel">
+      <div class="login-grid">
+        <div class="field span-4">
+          <label for="username">Username</label>
+          <input id="username" type="text" autocomplete="username" placeholder="qBittorrent username">
+        </div>
+        <div class="field span-4">
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" placeholder="qBittorrent password">
+        </div>
+        <div class="field span-4">
+          <label>&nbsp;</label>
+          <button id="loginButton" type="button">Login</button>
+        </div>
+        <div id="loginStatus" class="status-box span-12">Enter your qBittorrent credentials to start managing torrents.</div>
+      </div>
+      <form id="loginFallbackForm" class="hidden" method="post" action="/api/v2/auth/login" target="loginFallbackTarget">
+        <input type="hidden" name="username" id="loginFallbackUsername">
+        <input type="hidden" name="password" id="loginFallbackPassword">
+      </form>
+      <iframe name="loginFallbackTarget" id="loginFallbackTarget" class="hidden" tabindex="-1" aria-hidden="true"></iframe>
+    </section>
+
+    <section id="appPanel" class="panel hidden">
+      <div class="toolbar">
+        <div class="field span-3">
+          <label for="filterState">Filter</label>
+          <select id="filterState">
+            <option value="all">All torrents</option>
+            <option value="needs-seed">Needs seeding now</option>
+            <option value="downloading">Downloading</option>
+            <option value="uploading">Uploading or seeding</option>
+            <option value="paused">Paused</option>
+          </select>
+        </div>
+        <div class="field span-3">
+          <label for="categoryFilter">Category</label>
+          <select id="categoryFilter">
+            <option value="__all__">All categories</option>
+          </select>
+        </div>
+        <div class="field span-3">
+          <label for="searchInput">Search</label>
+          <input id="searchInput" type="text" placeholder="Filter by torrent name">
+        </div>
+        <div class="field span-3">
+          <label>Visibility</label>
+          <div class="compact-row">
+            <label class="inline-check" for="showInactiveToggle">
+              <input id="showInactiveToggle" type="checkbox">
+              <span>Show inactive</span>
+            </label>
+          </div>
+        </div>
+        <div class="field span-3">
+          <label>&nbsp;</label>
+          <div class="toolbar-actions">
+            <span id="lastRefresh" class="badge">Waiting for refresh</span>
+            <button id="refreshButton" class="secondary" type="button">Refresh</button>
+            <button id="logoutButton" class="secondary" type="button">Logout</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-grid" style="margin-top: 14px;">
+        <div class="field span-8">
+          <label for="magnetInput">Magnet links</label>
+          <textarea id="magnetInput" placeholder="Paste one magnet per line"></textarea>
+        </div>
+        <div class="field span-4">
+          <label for="torrentFiles">Torrent files</label>
+          <input id="torrentFiles" type="file" multiple accept=".torrent,application/x-bittorrent">
+          <div style="display:grid; gap:10px; margin-top:12px;">
+            <button id="addMagnetButton" type="button">Add magnet links</button>
+            <button id="uploadButton" type="button">Upload torrent files</button>
+          </div>
+        </div>
+        <div id="actionStatus" class="status-box span-12">Ready.</div>
+      </div>
+    </section>
+
+    <section id="tablePanel" class="panel hidden">
+      <div class="list-shell">
+        <table class="torrent-table">
+          <colgroup>
+            <col class="name-col">
+            <col class="size-col">
+            <col class="progress-col">
+            <col class="status-col">
+            <col class="down-col">
+            <col class="up-col">
+            <col class="seeds-col">
+            <col class="peers-col">
+            <col class="ratio-col">
+            <col class="category-col">
+            <col class="actions-col">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Size</th>
+              <th>Progress</th>
+              <th>Status</th>
+              <th>Down Speed</th>
+              <th>Up Speed</th>
+              <th>Seeds</th>
+              <th>Peers</th>
+              <th>Ratio</th>
+              <th>Category</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="torrentTable"></tbody>
+        </table>
+        <div id="emptyState" class="empty hidden">No torrents match the current filter.</div>
+      </div>
+    </section>
+
+    <section id="manageModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="manageTitle">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow">Torrent Tools</span>
+            <h2 id="manageTitle">Manage torrent</h2>
+            <p id="manageMeta">Current files, folders, and destination tools.</p>
+          </div>
+          <button id="manageCloseButton" class="secondary" type="button">Close</button>
+        </div>
+
+        <div class="modal-grid">
+          <div class="field span-6">
+            <label for="manageCurrentLocation">Current base location</label>
+            <input id="manageCurrentLocation" type="text" readonly>
+          </div>
+          <div class="field span-6">
+            <label for="manageSelectedLocation">Selected destination</label>
+            <input id="manageSelectedLocation" type="text" readonly>
+          </div>
+          <div class="field span-12">
+            <label>Downloads browser</label>
+            <div class="picker-shell">
+              <div class="picker-panel">
+                <div class="picker-breadcrumbs" id="pickerBreadcrumbs"></div>
+                <div class="picker-list" id="pickerList"></div>
+              </div>
+              <div class="picker-panel">
+                <div class="compact-row">
+                  <button id="pickerUpButton" class="secondary" type="button">Up</button>
+                  <button id="pickerSelectCurrentButton" class="secondary" type="button">Use This Folder</button>
+                </div>
+                <div class="field" style="padding:0; background:transparent; border:0;">
+                  <label for="manageNewFolderName">Create a new folder here</label>
+                  <div class="compact-row">
+                    <input id="manageNewFolderName" type="text" placeholder="New folder name">
+                    <button id="createFolderButton" class="secondary" type="button">Create Folder</button>
+                  </div>
+                </div>
+                <div class="field" style="padding:0; background:transparent; border:0;">
+                  <label for="manageCustomLocation">Or type an existing folder</label>
+                  <input id="manageCustomLocation" type="text" placeholder="/downloads/Some Existing Folder">
+                </div>
+                <div class="hint">This browser reads the actual `/downloads` tree from the server. Click folders to enter them, then choose that folder as the move target. Files are shown for context but are not selectable as destinations.</div>
+              </div>
+            </div>
+          </div>
+          <div class="field span-12">
+            <label>&nbsp;</label>
+            <div class="compact-row">
+              <button id="moveTorrentButton" type="button">Move Torrent</button>
+              <button id="modalRefreshButton" class="secondary" type="button">Reload Files</button>
+            </div>
+          </div>
+          <div id="manageStatus" class="status-box span-12">Choose a destination or rename a folder/file below.</div>
+        </div>
+
+        <div class="entry-shell">
+          <div class="entry-section">
+            <h3>Folders</h3>
+            <div id="manageFolders"></div>
+          </div>
+          <div class="entry-section">
+            <h3>Files</h3>
+            <div id="manageFiles"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="addMagnetModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="addMagnetTitle">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow">Magnet Intake</span>
+            <h2 id="addMagnetTitle">Choose destination before adding</h2>
+            <p id="addMagnetMeta">Pick where these torrents should land, and optionally set the top-level name you want qBittorrent to use.</p>
+          </div>
+          <button id="addMagnetCloseButton" class="secondary" type="button">Close</button>
+        </div>
+
+        <div class="modal-grid">
+          <div class="field span-6">
+            <label for="addSelectedLocation">Selected destination</label>
+            <input id="addSelectedLocation" type="text" readonly>
+          </div>
+          <div class="field span-6">
+            <label for="addCustomLocation">Or type an existing folder</label>
+            <input id="addCustomLocation" type="text" placeholder="/downloads/Some Existing Folder">
+          </div>
+          <div class="field span-6">
+            <label for="addCategoryInput">Category for this torrent</label>
+            <input id="addCategoryInput" type="text" list="addCategorySuggestions" placeholder="Optional category">
+            <datalist id="addCategorySuggestions"></datalist>
+          </div>
+          <div class="field span-12">
+            <label>Downloads browser</label>
+            <div class="picker-shell">
+              <div class="picker-panel">
+                <div class="picker-breadcrumbs" id="addPickerBreadcrumbs"></div>
+                <div class="picker-list" id="addPickerList"></div>
+              </div>
+              <div class="picker-panel">
+                <div class="compact-row">
+                  <button id="addPickerUpButton" class="secondary" type="button">Up</button>
+                  <button id="addPickerSelectCurrentButton" class="secondary" type="button">Use This Folder</button>
+                </div>
+                <div class="field" style="padding:0; background:transparent; border:0;">
+                  <label for="addNewFolderName">Create a new folder here</label>
+                  <div class="compact-row">
+                    <input id="addNewFolderName" type="text" placeholder="New folder name">
+                    <button id="addCreateFolderButton" class="secondary" type="button">Create Folder</button>
+                  </div>
+                </div>
+                <div class="hint">This chooses the server folder before the magnets are sent to qBittorrent. Exact internal file names are not known until metadata is fetched from peers.</div>
+              </div>
+            </div>
+          </div>
+          <div id="addMagnetStatus" class="status-box span-12">Choose a destination and optionally adjust the top-level names below.</div>
+        </div>
+
+        <div class="entry-shell">
+          <div class="entry-section">
+            <h3>Magnet Names</h3>
+            <div id="addMagnetRows"></div>
+          </div>
+        </div>
+
+        <div class="compact-row">
+          <button id="submitMagnetButton" type="button">Add These Magnets</button>
+          <button id="cancelMagnetButton" class="secondary" type="button">Cancel</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="peerTooltip" class="peer-tooltip hidden" role="status" aria-live="polite">
+    <div id="peerTooltipTitle" class="peer-tooltip-title">Leecher peers</div>
+    <div id="peerTooltipBody" class="peer-tooltip-body"></div>
+  </div>
+
+  <script data-cfasync="false">
+    const state = {
+      torrents: [],
+      autoRefresh: null,
+      syncRid: 0,
+      syncInFlight: false,
+      showInactive: false,
+      username: localStorage.getItem('tsff_torrent_username') || 'amrit',
+      peerTooltip: {
+        hash: '',
+        anchor: null,
+        cache: new Map(),
+        hideTimer: null,
+        refreshTimer: null,
+        lastEvent: null
+      },
+      manage: {
+        torrent: null,
+        files: [],
+        folders: [],
+        browserPath: '/downloads',
+        browserEntries: []
+      },
+      add: {
+        mode: 'magnet',
+        magnets: [],
+        uploads: [],
+        currentIndex: 0,
+        browserPath: '/downloads',
+        browserEntries: [],
+        selectedLocation: '/downloads',
+        selectedCategory: '',
+        useDesiredNameForParent: true
+      },
+      gcsSync: {
+        poller: null,
+        nextDelayMs: 2000,
+        torrentSync: {},
+        samples: [],
+        lastRunKey: '',
+        queuedRunTimer: null
+      }
+    };
+
+    const els = {
+      sessionState: document.getElementById('sessionState'),
+      seedDemandCount: document.getElementById('seedDemandCount'),
+      torrentCount: document.getElementById('torrentCount'),
+      syncBucketState: document.getElementById('syncBucketState'),
+      syncRuntimeState: document.getElementById('syncRuntimeState'),
+      syncLastRun: document.getElementById('syncLastRun'),
+      syncAuthState: document.getElementById('syncAuthState'),
+      syncSpeedState: document.getElementById('syncSpeedState'),
+      syncDirectionState: document.getElementById('syncDirectionState'),
+      syncBytesState: document.getElementById('syncBytesState'),
+      syncFilesState: document.getElementById('syncFilesState'),
+      syncPairState: document.getElementById('syncPairState'),
+      syncPhaseState: document.getElementById('syncPhaseState'),
+      syncBucketName: document.getElementById('syncBucketName'),
+      syncIntervalMinutes: document.getElementById('syncIntervalMinutes'),
+      syncIncludeConfig: document.getElementById('syncIncludeConfig'),
+      syncSaveButton: document.getElementById('syncSaveButton'),
+      syncNowButton: document.getElementById('syncNowButton'),
+      syncDisableButton: document.getElementById('syncDisableButton'),
+      syncPercentState: document.getElementById('syncPercentState'),
+      syncProgressLabel: document.getElementById('syncProgressLabel'),
+      syncProgressFill: document.getElementById('syncProgressFill'),
+      syncCurrentPath: document.getElementById('syncCurrentPath'),
+      syncCurrentItemSize: document.getElementById('syncCurrentItemSize'),
+      syncElapsedState: document.getElementById('syncElapsedState'),
+      syncDownloadsSummary: document.getElementById('syncDownloadsSummary'),
+      syncConfigSummary: document.getElementById('syncConfigSummary'),
+      syncLastResult: document.getElementById('syncLastResult'),
+      loginPanel: document.getElementById('loginPanel'),
+      appPanel: document.getElementById('appPanel'),
+      tablePanel: document.getElementById('tablePanel'),
+      peerTooltip: document.getElementById('peerTooltip'),
+      peerTooltipTitle: document.getElementById('peerTooltipTitle'),
+      peerTooltipBody: document.getElementById('peerTooltipBody'),
+      username: document.getElementById('username'),
+      password: document.getElementById('password'),
+      loginButton: document.getElementById('loginButton'),
+      loginStatus: document.getElementById('loginStatus'),
+      loginFallbackForm: document.getElementById('loginFallbackForm'),
+      loginFallbackUsername: document.getElementById('loginFallbackUsername'),
+      loginFallbackPassword: document.getElementById('loginFallbackPassword'),
+      filterState: document.getElementById('filterState'),
+      categoryFilter: document.getElementById('categoryFilter'),
+      searchInput: document.getElementById('searchInput'),
+      showInactiveToggle: document.getElementById('showInactiveToggle'),
+      refreshButton: document.getElementById('refreshButton'),
+      logoutButton: document.getElementById('logoutButton'),
+      lastRefresh: document.getElementById('lastRefresh'),
+      magnetInput: document.getElementById('magnetInput'),
+      torrentFiles: document.getElementById('torrentFiles'),
+      addMagnetButton: document.getElementById('addMagnetButton'),
+      uploadButton: document.getElementById('uploadButton'),
+      actionStatus: document.getElementById('actionStatus'),
+      torrentTable: document.getElementById('torrentTable'),
+      emptyState: document.getElementById('emptyState'),
+      manageModal: document.getElementById('manageModal'),
+      manageTitle: document.getElementById('manageTitle'),
+      manageMeta: document.getElementById('manageMeta'),
+      manageCurrentLocation: document.getElementById('manageCurrentLocation'),
+      manageSelectedLocation: document.getElementById('manageSelectedLocation'),
+      manageCustomLocation: document.getElementById('manageCustomLocation'),
+      moveTorrentButton: document.getElementById('moveTorrentButton'),
+      modalRefreshButton: document.getElementById('modalRefreshButton'),
+      manageStatus: document.getElementById('manageStatus'),
+      manageFolders: document.getElementById('manageFolders'),
+      manageFiles: document.getElementById('manageFiles'),
+      manageCloseButton: document.getElementById('manageCloseButton'),
+      pickerBreadcrumbs: document.getElementById('pickerBreadcrumbs'),
+      pickerList: document.getElementById('pickerList'),
+      pickerUpButton: document.getElementById('pickerUpButton'),
+      pickerSelectCurrentButton: document.getElementById('pickerSelectCurrentButton'),
+      manageNewFolderName: document.getElementById('manageNewFolderName'),
+      createFolderButton: document.getElementById('createFolderButton'),
+      addMagnetModal: document.getElementById('addMagnetModal'),
+      addMagnetTitle: document.getElementById('addMagnetTitle'),
+      addMagnetMeta: document.getElementById('addMagnetMeta'),
+      addSelectedLocation: document.getElementById('addSelectedLocation'),
+      addCustomLocation: document.getElementById('addCustomLocation'),
+      addCategoryInput: document.getElementById('addCategoryInput'),
+      addCategorySuggestions: document.getElementById('addCategorySuggestions'),
+      addPickerBreadcrumbs: document.getElementById('addPickerBreadcrumbs'),
+      addPickerList: document.getElementById('addPickerList'),
+      addPickerUpButton: document.getElementById('addPickerUpButton'),
+      addPickerSelectCurrentButton: document.getElementById('addPickerSelectCurrentButton'),
+      addNewFolderName: document.getElementById('addNewFolderName'),
+      addCreateFolderButton: document.getElementById('addCreateFolderButton'),
+      addMagnetStatus: document.getElementById('addMagnetStatus'),
+      addMagnetRows: document.getElementById('addMagnetRows'),
+      submitMagnetButton: document.getElementById('submitMagnetButton'),
+      cancelMagnetButton: document.getElementById('cancelMagnetButton'),
+      addMagnetCloseButton: document.getElementById('addMagnetCloseButton')
+    };
+
+    els.username.value = state.username;
+
+    function setStatus(target, message, kind) {
+      if (!target) {
+        return;
+      }
+      target.textContent = message;
+      target.className = `status-box${kind ? ` ${kind}` : ''}`;
+    }
+
+    function setLoggedIn(loggedIn) {
+      els.loginPanel.classList.toggle('hidden', loggedIn);
+      els.appPanel.classList.toggle('hidden', !loggedIn);
+      els.tablePanel.classList.toggle('hidden', !loggedIn);
+      els.sessionState.textContent = loggedIn ? 'Logged in' : 'Not logged in';
+      if (!loggedIn) {
+        stopAutoRefresh();
+        state.syncRid = 0;
+        state.syncInFlight = false;
+      }
+    }
+
+    function formatBytes(value) {
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let size = Number(value) || 0;
+      let unit = 0;
+      while (size >= 1024 && unit < units.length - 1) {
+        size /= 1024;
+        unit += 1;
+      }
+      return `${size.toFixed(size >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+    }
+
+    function formatSpeed(value) {
+      return `${formatBytes(value)}/s`;
+    }
+
+    function formatEta(seconds) {
+      const total = Number(seconds);
+      if (!Number.isFinite(total) || total < 0 || total > 8640000) {
+        return 'n/a';
+      }
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      if (hours > 48) {
+        return `${Math.round(hours / 24)}d`;
+      }
+      if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      return `${minutes}m`;
+    }
+
+    function formatTorrentEta(torrent) {
+      const progress = Number(torrent.progress || 0);
+      const stateName = String(torrent.state || '').toLowerCase();
+      if (progress >= 1) {
+        if (stateName.includes('up') || stateName.includes('seed')) {
+          return 'Seeding';
+        }
+        if (stateName.includes('pause')) {
+          return 'Complete';
+        }
+        return 'Complete';
+      }
+      return formatEta(torrent.eta);
+    }
+
+    function formatShortDuration(totalSeconds) {
+      const numeric = Number(totalSeconds);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return '0s';
+      }
+      const rounded = Math.floor(numeric);
+      const hours = Math.floor(rounded / 3600);
+      const minutes = Math.floor((rounded % 3600) / 60);
+      const seconds = rounded % 60;
+      if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+      }
+      return `${seconds}s`;
+    }
+
+    function formatPercent(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return 'n/a';
+      }
+      return `${(numeric * 100).toFixed(1)}%`;
+    }
+
+    function formatDateTime(value) {
+      if (!value) {
+        return 'Never';
+      }
+      const stamp = new Date(value);
+      if (Number.isNaN(stamp.getTime())) {
+        return 'Never';
+      }
+      return stamp.toLocaleString();
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function normalizePath(value) {
+      if (!value) {
+        return '';
+      }
+      const trimmed = String(value).trim().replace(/\/+/g, '/');
+      if (trimmed === '/') {
+        return '/';
+      }
+      return trimmed.replace(/\/$/, '');
+    }
+
+    function dirname(path) {
+      const normalized = normalizePath(path);
+      if (!normalized || normalized === '/') {
+        return '';
+      }
+      const lastSlash = normalized.lastIndexOf('/');
+      if (lastSlash <= 0) {
+        return '';
+      }
+      return normalized.slice(0, lastSlash);
+    }
+
+    function basename(path) {
+      const normalized = normalizePath(path);
+      if (!normalized) {
+        return '';
+      }
+      const lastSlash = normalized.lastIndexOf('/');
+      return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+    }
+
+    function joinPath(parent, child) {
+      const normalizedParent = normalizePath(parent);
+      const normalizedChild = String(child || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+      if (!normalizedParent) {
+        return normalizedChild;
+      }
+      if (!normalizedChild) {
+        return normalizedParent;
+      }
+      return `${normalizedParent}/${normalizedChild}`;
+    }
+
+    function needsSeed(torrent) {
+      return Number(torrent.num_leechs || 0) > 0 && Number(torrent.num_seeds || 0) <= 1;
+    }
+
+    function isPaused(torrent) {
+      const stateName = String(torrent.state || '').toLowerCase();
+      return stateName.includes('paused') || stateName.includes('stopped');
+    }
+
+    function buildFolderEntries(files) {
+      const folders = new Set();
+      files.forEach((file) => {
+        const path = String(file.name || '');
+        const segments = path.split('/').filter(Boolean);
+        if (segments.length < 2) {
+          return;
+        }
+        let current = '';
+        for (let index = 0; index < segments.length - 1; index += 1) {
+          current = current ? `${current}/${segments[index]}` : segments[index];
+          folders.add(current);
+        }
+      });
+      return Array.from(folders).sort((left, right) => {
+        const depthDiff = left.split('/').length - right.split('/').length;
+        return depthDiff || left.localeCompare(right);
+      });
+    }
+
+    function findTorrent(hash) {
+      return state.torrents.find((torrent) => torrent.hash === hash) || null;
+    }
+
+    function patchTorrent(hash, updates) {
+      const torrent = findTorrent(hash);
+      if (!torrent) {
+        return;
+      }
+      Object.assign(torrent, updates);
+      renderTable();
+    }
+
+    function sortTorrents(list) {
+      return [...list].sort((left, right) => {
+        const addedDiff = Number(right.added_on || 0) - Number(left.added_on || 0);
+        if (addedDiff) {
+          return addedDiff;
+        }
+        return String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
+      });
+    }
+
+    function applyTorrentSync(payload = {}) {
+      const incoming = payload.torrents || {};
+      const removed = Array.isArray(payload.torrents_removed) ? payload.torrents_removed : [];
+      const fullUpdate = Boolean(payload.full_update) || state.syncRid === 0;
+      const nextMap = fullUpdate
+        ? new Map()
+        : new Map(state.torrents.map((torrent) => [torrent.hash, torrent]));
+
+      Object.entries(incoming).forEach(([hash, torrent]) => {
+        nextMap.set(hash, { ...(nextMap.get(hash) || {}), ...torrent, hash });
+      });
+      removed.forEach((hash) => {
+        nextMap.delete(hash);
+      });
+
+      state.torrents = sortTorrents(Array.from(nextMap.values()));
+      state.syncRid = Number(payload.rid || 0);
+    }
+
+    function updateRefreshStamp() {
+      const stamp = new Date().toLocaleTimeString();
+      els.lastRefresh.textContent = `Updated ${stamp}`;
+    }
+
+    async function gcsSyncApi(path, options = {}) {
+      const response = await fetch(path, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {})
+        },
+        ...options
+      });
+      const text = await response.text();
+      let payload = null;
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch (_) {
+          payload = text;
+        }
+      }
+      if (!response.ok) {
+        throw new Error(typeof payload === 'string' ? `HTTP ${response.status}: ${payload}` : `HTTP ${response.status}`);
+      }
+      return payload;
+    }
+
+    function requestBackgroundGcsSync(options = {}) {
+      const immediate = Boolean(options.immediate);
+      const bucketName = String(state.gcsSync?.config?.bucket_name || '').trim();
+      const enabled = Boolean(state.gcsSync?.config?.enabled);
+      if (!enabled || !bucketName) {
+        return;
+      }
+      if (state.gcsSync.queuedRunTimer) {
+        clearTimeout(state.gcsSync.queuedRunTimer);
+        state.gcsSync.queuedRunTimer = null;
+      }
+      if (immediate) {
+        gcsSyncApi('/api/gcs-sync/run', { method: 'POST', body: '{}' }).catch(() => {});
+        return;
+      }
+      state.gcsSync.queuedRunTimer = window.setTimeout(() => {
+        state.gcsSync.queuedRunTimer = null;
+        gcsSyncApi('/api/gcs-sync/run', { method: 'POST', body: '{}' }).catch(() => {});
+      }, 1200);
+    }
+
+    function updateGcsSyncLiveMetrics({ running, runKey, bytesDone, progressUpdatedAt, averageSpeed }) {
+      const now = Date.now();
+      const updatedAtMs = progressUpdatedAt ? Date.parse(progressUpdatedAt) : Number.NaN;
+
+      if (!running || !runKey) {
+        state.gcsSync.samples = [];
+        state.gcsSync.lastRunKey = '';
+        return {
+          speed: 0,
+          secondsSinceProgressUpdate: null
+        };
+      }
+
+      if (state.gcsSync.lastRunKey !== runKey) {
+        state.gcsSync.samples = [];
+        state.gcsSync.lastRunKey = runKey;
+      }
+
+      const samples = state.gcsSync.samples;
+      const lastSample = samples[samples.length - 1] || null;
+      if (!lastSample || lastSample.bytesDone !== bytesDone || (now - lastSample.at) >= 1000) {
+        samples.push({ at: now, bytesDone });
+      }
+      while (samples.length > 12 || (samples[0] && (now - samples[0].at) > 12000)) {
+        samples.shift();
+      }
+
+      let speed = 0;
+      let baseline = null;
+      for (let index = samples.length - 2; index >= 0; index -= 1) {
+        const candidate = samples[index];
+        if (candidate.bytesDone < bytesDone) {
+          baseline = candidate;
+          break;
+        }
+      }
+      if (baseline) {
+        const seconds = Math.max(0.001, (now - baseline.at) / 1000);
+        speed = Math.max(0, (bytesDone - baseline.bytesDone) / seconds);
+      } else if (samples.length < 2) {
+        speed = Math.max(0, Number(averageSpeed || 0));
+      }
+
+      const secondsSinceProgressUpdate = Number.isFinite(updatedAtMs)
+        ? Math.max(0, (now - updatedAtMs) / 1000)
+        : null;
+
+      if (secondsSinceProgressUpdate !== null && secondsSinceProgressUpdate > 4 && speed > 0) {
+        speed = 0;
+      }
+
+      return {
+        speed,
+        secondsSinceProgressUpdate
+      };
+    }
+
+    function renderGcsSyncStatus(payload) {
+      const config = payload?.config || {};
+      const runtime = payload?.runtime || {};
+      const auth = payload?.auth || {};
+      const progress = runtime?.progress || {};
+      state.gcsSync.config = config;
+      state.gcsSync.torrentSync = payload?.torrent_sync || {};
+      const bucketName = config.bucket_name || '';
+      const enabled = Boolean(config.enabled);
+      const running = Boolean(runtime.running);
+      const intervalMinutes = Math.max(1, Number(config.interval_minutes || 5));
+      const includeConfig = Boolean(config.sync_config);
+      const lastFinished = runtime.last_finished_at || runtime.last_started_at;
+      const stats = runtime.last_stats || null;
+      const filesDone = Number(progress.files_done || 0);
+      const filesTotal = Number(progress.files_total || 0);
+      const bytesDone = Number(progress.bytes_done || 0);
+      const bytesTotal = Number(progress.bytes_total || 0);
+      const percentComplete = Math.max(0, Math.min(100, Number(progress.percent_complete || 0) * 100));
+      const liveMetrics = updateGcsSyncLiveMetrics({
+        running,
+        runKey: runtime.last_started_at || progress.started_at || '',
+        bytesDone,
+        progressUpdatedAt: progress.updated_at || '',
+        averageSpeed: Number(progress.bytes_per_second || 0)
+      });
+      let speed = Number(liveMetrics.speed || 0);
+      const currentPath = progress.current_path || '';
+      const currentSize = Number(progress.current_size || 0);
+      const currentItemDone = Number(progress.current_item_done || 0);
+      const phase = String(progress.phase || 'idle');
+      const pair = String(progress.pair || 'downloads');
+      const direction = String(progress.direction || (running ? 'working' : 'idle'));
+      const elapsedSeconds = Number(progress.elapsed_seconds || 0);
+      const checkpointAge = liveMetrics.secondsSinceProgressUpdate;
+      const activeTransferPhase = new Set(['pull', 'push', 'transfer', 'checksum', 'scanning', 'planning', 'delete-check']);
+      if (!running || !activeTransferPhase.has(phase)) {
+        speed = 0;
+      }
+      const staleCurrentPath = Boolean(
+        running &&
+        currentPath &&
+        checkpointAge !== null &&
+        checkpointAge > 4 &&
+        currentItemDone <= 0
+      );
+      let currentItemLabel = `${formatBytes(currentItemDone)} / ${formatBytes(currentSize)}`;
+      if (running && currentPath && currentSize > 0 && currentItemDone <= 0) {
+        currentItemLabel = checkpointAge !== null && checkpointAge > 4
+          ? `Waiting for next checkpoint • ${formatBytes(currentSize)} file`
+          : `Starting file • ${formatBytes(currentSize)} total`;
+      } else if (!currentPath && !currentSize) {
+        currentItemLabel = 'Waiting';
+      }
+
+      els.syncBucketState.textContent = bucketName || 'Not configured';
+      els.syncRuntimeState.textContent = running ? 'Syncing now' : (enabled ? 'Enabled' : 'Disabled');
+      els.syncLastRun.textContent = formatDateTime(lastFinished);
+      els.syncAuthState.textContent = auth.ok
+        ? (auth.service_account_email || auth.project_id || auth.credential_type || 'Ready')
+        : 'Auth missing';
+      els.syncSpeedState.textContent = speed > 0 ? formatSpeed(speed) : '0 B/s';
+      els.syncDirectionState.textContent = direction.replaceAll('-', ' ');
+      els.syncBytesState.textContent = `${formatBytes(bytesDone)} / ${formatBytes(bytesTotal)}`;
+      els.syncFilesState.textContent = `${filesDone} / ${filesTotal} files`;
+      els.syncPairState.textContent = pair || 'downloads';
+      els.syncPhaseState.textContent = phase.replaceAll('-', ' ');
+      els.syncPercentState.textContent = `${percentComplete.toFixed(1)}%`;
+      els.syncProgressLabel.textContent = running
+        ? `${direction.replaceAll('-', ' ')} • ${phase.replaceAll('-', ' ')}`
+        : (runtime.last_result === 'ok' ? 'Last sync completed' : 'Waiting for next run');
+      els.syncProgressFill.style.width = `${percentComplete}%`;
+      els.syncCurrentPath.innerHTML = staleCurrentPath
+        ? 'Waiting for next progress checkpoint from the sync worker.'
+        : (currentPath
+          ? `<code>${escapeHtml(currentPath)}</code>`
+          : 'No active file or folder path right now.');
+      els.syncCurrentItemSize.textContent = currentItemLabel;
+      els.syncElapsedState.textContent = formatShortDuration(elapsedSeconds);
+      els.syncDownloadsSummary.textContent = stats?.downloads
+        ? (Number.isFinite(Number(stats.downloads.skipped))
+          ? `sync ${stats.downloads.synced_torrents || 0} • skip ${stats.downloads.skipped || 0}`
+          : `pull ${stats.downloads.pulled} • push ${stats.downloads.pushed}`)
+        : (running && pair === 'downloads' ? 'Syncing now' : 'Waiting');
+      els.syncConfigSummary.textContent = stats?.config
+        ? `pull ${stats.config.pulled} • push ${stats.config.pushed}`
+        : (running && pair === 'config' ? 'Syncing now' : (includeConfig ? 'Waiting' : 'Disabled'));
+      els.syncLastResult.textContent = runtime.last_result === 'ok'
+        ? 'Last run finished cleanly'
+        : runtime.last_result === 'error'
+          ? 'Last run failed'
+          : 'No sync completed yet';
+
+      if (els.syncBucketName && document.activeElement !== els.syncBucketName) {
+        els.syncBucketName.value = bucketName;
+      }
+      if (els.syncIntervalMinutes && document.activeElement !== els.syncIntervalMinutes) {
+        els.syncIntervalMinutes.value = String(intervalMinutes);
+      }
+      if (els.syncIncludeConfig) {
+        els.syncIncludeConfig.checked = includeConfig;
+      }
+
+      if (running) {
+        const phaseLabel = phase.replaceAll('-', ' ');
+        const pathLabel = currentPath || 'preparing next file';
+        const speedLabel = speed > 0
+          ? formatSpeed(speed)
+          : (phase === 'checksum' || phase === 'scanning'
+            ? `${phaseLabel} in progress`
+            : (checkpointAge !== null && checkpointAge > 4 ? 'waiting for next gsutil checkpoint' : 'speed warming up'));
+        setStatus(els.syncStatus, `Syncing ${bucketName || 'bucket'} now.\n${filesDone}/${filesTotal} files confirmed • ${formatBytes(bytesDone)} confirmed • ${speedLabel}\n${pathLabel}`, '');
+      } else if (!bucketName) {
+        setStatus(els.syncStatus, 'No bucket configured yet. Enter a bucket name like psff-bucket-a, then press Save + Enable.', '');
+      } else if (runtime.last_result === 'error') {
+        const details = runtime.last_error || 'Unknown sync error.';
+        setStatus(els.syncStatus, `Last sync failed.\n${details}`, 'error');
+      } else if (runtime.last_result === 'ok') {
+        const downloadsSummary = stats?.downloads
+          ? `Downloads pull ${stats.downloads.pulled}, push ${stats.downloads.pushed}`
+          : 'Downloads sync complete';
+        const configSummary = stats?.config
+          ? `Config pull ${stats.config.pulled}, push ${stats.config.pushed}`
+          : (includeConfig ? 'Config waiting' : 'Config disabled');
+        setStatus(els.syncStatus, `${downloadsSummary}\n${configSummary}\nLast run ${formatDateTime(lastFinished)}.`, 'ok');
+      } else if (enabled) {
+        setStatus(els.syncStatus, `Auto-sync is enabled for ${bucketName}. Next runs happen every ${intervalMinutes} minute(s).`, 'ok');
+      } else {
+        setStatus(els.syncStatus, `${bucketName} is configured but auto-sync is disabled.`, '');
+      }
+
+      if (state.torrents.length) {
+        renderTable();
+      }
+    }
+
+    function getTorrentSyncBadge(torrent) {
+      const syncEnabled = Boolean(state.gcsSync?.config?.enabled);
+      const bucketName = String(state.gcsSync?.config?.bucket_name || '').trim();
+      if (!syncEnabled || !bucketName) {
+        return { className: '', text: '' };
+      }
+      const record = state.gcsSync.torrentSync?.[torrent.hash] || null;
+      const progress = Number(torrent.progress || 0);
+      if (!record) {
+        if (progress >= 1) {
+          return { className: 'sync-awaiting', text: 'Awaiting sync' };
+        }
+        return { className: '', text: 'Not ready' };
+      }
+
+      const status = String(record.status || '').toLowerCase();
+      const missingRemoteCount = Number(record.verified_missing_remote_count || 0);
+      const mismatchCount = Number(record.verified_mismatch_count || 0);
+      const syncError = String(record.last_sync_error || '').trim();
+      if (status === 'synced') {
+        return { className: 'sync-ok', text: 'Synced to GCP' };
+      }
+      if (status === 'syncing') {
+        return { className: 'sync-working', text: 'Syncing to GCP' };
+      }
+      if (status === 'needs_resync' || status === 'desynced' || status === 'error') {
+        if (missingRemoteCount === 0 && mismatchCount === 0 && !syncError) {
+          return { className: 'sync-ok', text: 'Synced to GCP' };
+        }
+        return { className: 'sync-bad', text: 'Needs resync' };
+      }
+      if (status === 'pending') {
+        return { className: 'sync-awaiting', text: 'Awaiting sync' };
+      }
+      return { className: 'sync-awaiting', text: 'Awaiting sync' };
+    }
+
+    async function loadGcsSyncStatus({ silent = false } = {}) {
+      try {
+        const payload = await gcsSyncApi('/api/gcs-sync/status');
+        renderGcsSyncStatus(payload);
+        state.gcsSync.nextDelayMs = payload?.runtime?.running ? 1000 : 4000;
+      } catch (error) {
+        if (!silent) {
+          setStatus(els.syncStatus, `Failed to load bucket sync status.\n${error.message}`, 'error');
+        }
+        els.syncAuthState.textContent = 'Unavailable';
+        state.gcsSync.nextDelayMs = 2500;
+      }
+    }
+
+    function stopGcsSyncPolling() {
+      if (state.gcsSync.poller) {
+        clearTimeout(state.gcsSync.poller);
+        state.gcsSync.poller = null;
+      }
+    }
+
+    function scheduleGcsSyncPolling(delayMs = state.gcsSync.nextDelayMs || 2000) {
+      stopGcsSyncPolling();
+      state.gcsSync.poller = window.setTimeout(async () => {
+        await loadGcsSyncStatus({ silent: true }).catch(() => {});
+        scheduleGcsSyncPolling();
+      }, Math.max(600, Number(delayMs) || 2000));
+    }
+
+    async function saveGcsSyncConfig() {
+      const bucketName = els.syncBucketName.value.trim();
+      const intervalMinutes = Number(els.syncIntervalMinutes.value || '5');
+      if (!bucketName) {
+        setStatus(els.syncStatus, 'Enter a bucket name first.', 'error');
+        return;
+      }
+      els.syncSaveButton.disabled = true;
+      setStatus(els.syncStatus, `Saving ${bucketName} and enabling VM sync...`);
+      try {
+        const payload = await gcsSyncApi('/api/gcs-sync/config', {
+          method: 'POST',
+          body: JSON.stringify({
+            bucket_name: bucketName,
+            interval_minutes: Math.max(1, Math.round(intervalMinutes || 5)),
+            sync_config: els.syncIncludeConfig.checked,
+            enabled: true
+          })
+        });
+        renderGcsSyncStatus(payload);
+        setStatus(els.syncStatus, `Saved ${bucketName}. First sync has been triggered on the VM.`, 'ok');
+      } catch (error) {
+        setStatus(els.syncStatus, `Failed to save sync config.\n${error.message}`, 'error');
+      } finally {
+        els.syncSaveButton.disabled = false;
+      }
+    }
+
+    async function triggerGcsSyncNow() {
+      els.syncNowButton.disabled = true;
+      setStatus(els.syncStatus, 'Starting a manual bucket sync...');
+      try {
+        const payload = await gcsSyncApi('/api/gcs-sync/run', { method: 'POST', body: '{}' });
+        renderGcsSyncStatus(payload.status);
+        setStatus(els.syncStatus, payload.started ? 'Manual sync started.' : 'A sync is already running.', 'ok');
+      } catch (error) {
+        setStatus(els.syncStatus, `Failed to start sync.\n${error.message}`, 'error');
+      } finally {
+        els.syncNowButton.disabled = false;
+      }
+    }
+
+    async function disableGcsSync() {
+      els.syncDisableButton.disabled = true;
+      setStatus(els.syncStatus, 'Disabling VM auto-sync...');
+      try {
+        const payload = await gcsSyncApi('/api/gcs-sync/disable', { method: 'POST', body: '{}' });
+        renderGcsSyncStatus(payload);
+        setStatus(els.syncStatus, 'Auto-sync disabled. Existing bucket settings were kept.', 'ok');
+      } catch (error) {
+        setStatus(els.syncStatus, `Failed to disable sync.\n${error.message}`, 'error');
+      } finally {
+        els.syncDisableButton.disabled = false;
+      }
+    }
+
+    function stopAutoRefresh() {
+      if (state.autoRefresh) {
+        clearInterval(state.autoRefresh);
+        state.autoRefresh = null;
+      }
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      state.autoRefresh = setInterval(() => {
+        syncTorrents({ silent: true }).catch(() => {});
+      }, 2000);
+    }
+
+    function encodeDownloadsPath(path) {
+      const normalized = normalizePath(path) || '/downloads';
+      const relative = normalized.replace(/^\/downloads/, '').replace(/^\/+/, '');
+      if (!relative) {
+        return '/__downloads__/';
+      }
+      return `/__downloads__/${relative.split('/').map((part) => encodeURIComponent(part)).join('/')}/`;
+    }
+
+    function escapeAttribute(value) {
+      return escapeHtml(value).replaceAll('`', '&#96;');
+    }
+
+    function showPeerTooltip(anchor, title, lines) {
+      if (!anchor) {
+        return;
+      }
+      els.peerTooltipTitle.textContent = title;
+      els.peerTooltipBody.innerHTML = lines.join('');
+      els.peerTooltip.classList.remove('hidden');
+      state.peerTooltip.anchor = anchor;
+      positionPeerTooltip(anchor, state.peerTooltip.lastEvent);
+    }
+
+    function hidePeerTooltip() {
+      if (state.peerTooltip.hideTimer) {
+        clearTimeout(state.peerTooltip.hideTimer);
+        state.peerTooltip.hideTimer = null;
+      }
+      if (state.peerTooltip.refreshTimer) {
+        clearInterval(state.peerTooltip.refreshTimer);
+        state.peerTooltip.refreshTimer = null;
+      }
+      state.peerTooltip.hash = '';
+      state.peerTooltip.anchor = null;
+      state.peerTooltip.lastEvent = null;
+      els.peerTooltip.classList.add('hidden');
+      els.peerTooltipBody.innerHTML = '';
+    }
+
+    function scheduleHidePeerTooltip() {
+      if (state.peerTooltip.hideTimer) {
+        clearTimeout(state.peerTooltip.hideTimer);
+      }
+      state.peerTooltip.hideTimer = window.setTimeout(() => {
+        hidePeerTooltip();
+      }, 120);
+    }
+
+    function positionPeerTooltip(anchor, event) {
+      if (!anchor || els.peerTooltip.classList.contains('hidden')) {
+        return;
+      }
+      const tooltip = els.peerTooltip;
+      const rect = anchor.getBoundingClientRect();
+      const preferredLeft = event ? event.clientX + 14 : rect.left + 12;
+      const preferredTop = event ? event.clientY + 14 : rect.bottom + 10;
+      const maxLeft = Math.max(12, window.innerWidth - tooltip.offsetWidth - 12);
+      const maxTop = Math.max(12, window.innerHeight - tooltip.offsetHeight - 12);
+      tooltip.style.left = `${Math.min(preferredLeft, maxLeft)}px`;
+      tooltip.style.top = `${Math.min(preferredTop, maxTop)}px`;
+    }
+
+    function updatePeerTooltipAnchor(anchor, leecherCount) {
+      if (!anchor) {
+        return;
+      }
+      anchor.setAttribute('data-leecher-count', String(leecherCount));
+      anchor.textContent = `Leechers waiting: ${leecherCount}`;
+    }
+
+    function renderPeerRows(peers) {
+      return peers.map((peer) => {
+        const address = peer.country ? `${escapeHtml(peer.country)} ${escapeHtml(peer.ipPort)}` : escapeHtml(peer.ipPort);
+        const client = escapeHtml(peer.client || 'Unknown client');
+        const meta = [];
+        if (peer.progressText !== 'n/a') {
+          meta.push(`Progress ${peer.progressText}`);
+        }
+        if (peer.downText !== 'n/a') {
+          meta.push(`DL ${peer.downText}`);
+        }
+        if (peer.upText !== 'n/a') {
+          meta.push(`UL ${peer.upText}`);
+        }
+        return `
+          <div class="peer-tooltip-row">
+            <div>${address}</div>
+            <div class="peer-tooltip-meta">${client}${meta.length ? ` • ${meta.join(' • ')}` : ''}</div>
+          </div>
+        `;
+      });
+    }
+
+    async function fetchLeecherPeers(hash, { force = false } = {}) {
+      const cached = state.peerTooltip.cache.get(hash);
+      if (!force && cached && (Date.now() - cached.at) < 45000) {
+        return cached.peers;
+      }
+      const response = await api(`/api/v2/sync/torrentPeers?rid=0&hash=${encodeURIComponent(hash)}`);
+      const payload = await response.json();
+      const peerEntries = Object.values(payload.peers || {}).map((peer) => {
+        const ip = String(peer.ip || peer.address || '').trim();
+        const port = peer.port ? `:${peer.port}` : '';
+        const progress = Number(peer.progress);
+        return {
+          ipPort: `${ip || 'unknown'}${port}`,
+          country: String(peer.country || peer.country_code || '').trim(),
+          client: String(peer.client || peer.connection || '').trim(),
+          progress,
+          progressText: Number.isFinite(progress) ? formatPercent(progress) : 'n/a',
+          downText: Number.isFinite(Number(peer.dl_speed)) ? formatSpeed(peer.dl_speed) : 'n/a',
+          upText: Number.isFinite(Number(peer.up_speed)) ? formatSpeed(peer.up_speed) : 'n/a'
+        };
+      });
+      const leechers = peerEntries
+        .filter((peer) => !Number.isFinite(peer.progress) || peer.progress < 1)
+        .sort((left, right) => {
+          const progressLeft = Number.isFinite(left.progress) ? left.progress : -1;
+          const progressRight = Number.isFinite(right.progress) ? right.progress : -1;
+          return progressLeft - progressRight;
+        });
+      state.peerTooltip.cache.set(hash, { at: Date.now(), peers: leechers });
+      return leechers;
+    }
+
+    async function refreshLeecherTooltip(hash, anchor, { force = false } = {}) {
+      const peers = await fetchLeecherPeers(hash, { force });
+      if (state.peerTooltip.hash !== hash || state.peerTooltip.anchor !== anchor) {
+        return;
+      }
+      updatePeerTooltipAnchor(anchor, peers.length);
+      showPeerTooltip(
+        anchor,
+        `Leechers waiting: ${peers.length}`,
+        peers.length
+          ? renderPeerRows(peers)
+          : ['<div class="peer-tooltip-row"><div>No leecher peer details returned yet.</div></div>']
+      );
+    }
+
+    function startPeerTooltipRefresh(hash, anchor) {
+      if (state.peerTooltip.refreshTimer) {
+        clearInterval(state.peerTooltip.refreshTimer);
+      }
+      state.peerTooltip.refreshTimer = window.setInterval(() => {
+        if (state.peerTooltip.hash !== hash || state.peerTooltip.anchor !== anchor) {
+          return;
+        }
+        refreshLeecherTooltip(hash, anchor, { force: true }).catch(() => {});
+      }, 4000);
+    }
+
+    async function openLeecherTooltip(anchor, hash, leecherCount, event) {
+      if (state.peerTooltip.hideTimer) {
+        clearTimeout(state.peerTooltip.hideTimer);
+        state.peerTooltip.hideTimer = null;
+      }
+      state.peerTooltip.lastEvent = event || null;
+      state.peerTooltip.hash = hash;
+      state.peerTooltip.anchor = anchor;
+      showPeerTooltip(anchor, `Leechers waiting: ${leecherCount}`, [
+        '<div class="peer-tooltip-row"><div>Loading peer list...</div></div>'
+      ]);
+      positionPeerTooltip(anchor, event);
+      try {
+        await refreshLeecherTooltip(hash, anchor);
+        startPeerTooltipRefresh(hash, anchor);
+      } catch (error) {
+        if (state.peerTooltip.hash !== hash || state.peerTooltip.anchor !== anchor) {
+          return;
+        }
+        showPeerTooltip(anchor, `Leechers waiting: ${leecherCount}`, [
+          `<div class="peer-tooltip-row"><div>${escapeHtml(error.message || 'Failed to load peers.')}</div></div>`
+        ]);
+      }
+    }
+
+    function normalizeBrowserEntries(payload) {
+      if (!Array.isArray(payload)) {
+        return [];
+      }
+      return payload.map((entry) => {
+        const rawName = String(entry.name || '');
+        const isDirectory =
+          entry.type === 'directory' ||
+          entry.type === 'dir' ||
+          /\/$/.test(rawName);
+        return {
+          name: rawName.replace(/\/$/, ''),
+          type: isDirectory ? 'directory' : 'file',
+          size: Number(entry.size || 0),
+          mtime: entry.mtime || entry.modification_time || ''
+        };
+      }).filter((entry) => entry.name && entry.name !== '.').sort((left, right) => {
+        if (left.type !== right.type) {
+          return left.type === 'directory' ? -1 : 1;
+        }
+        return left.name.localeCompare(right.name);
+      });
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, options);
+      if (response.status === 403) {
+        setLoggedIn(false);
+        throw new Error('Session expired. Log in again.');
+      }
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP ${response.status}: ${text || 'request failed'}`);
+      }
+      return response;
+    }
+
+    async function login() {
+      const username = els.username.value.trim();
+      const password = els.password.value;
+      if (!username || !password) {
+        setStatus(els.loginStatus, 'Username and password are required.', 'error');
+        return;
+      }
+
+      els.loginButton.disabled = true;
+      setStatus(els.loginStatus, 'Signing in...');
+
+      try {
+        const body = new URLSearchParams({ username, password });
+        await api('/api/v2/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: body.toString()
+        });
+        localStorage.setItem('tsff_torrent_username', username);
+        state.username = username;
+        els.password.value = '';
+        setLoggedIn(true);
+        setStatus(els.loginStatus, 'Login successful.', 'ok');
+        setStatus(els.actionStatus, 'Connected to qBittorrent.', 'ok');
+        state.syncRid = 0;
+        await syncTorrents();
+        startAutoRefresh();
+      } catch (error) {
+        const message = String(error && error.message ? error.message : error);
+        if (message.includes('Failed to fetch')) {
+          try {
+            await loginViaFallbackForm(username, password);
+            return;
+          } catch (fallbackError) {
+            setStatus(els.loginStatus, `Login failed.\n${fallbackError.message}`, 'error');
+            return;
+          }
+        }
+        setStatus(els.loginStatus, `Login failed.\n${message}`, 'error');
+      } finally {
+        els.loginButton.disabled = false;
+      }
+    }
+
+    async function waitForSession(timeoutMs = 5000) {
+      const startedAt = Date.now();
+      while ((Date.now() - startedAt) < timeoutMs) {
+        try {
+          await api('/api/v2/app/version');
+          return true;
+        } catch (_) {}
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+      }
+      throw new Error('Fallback login did not create a session.');
+    }
+
+    async function loginViaFallbackForm(username, password) {
+      setStatus(els.loginStatus, 'Fetch login failed. Trying form-based fallback...');
+      els.loginFallbackUsername.value = username;
+      els.loginFallbackPassword.value = password;
+      els.loginFallbackForm.submit();
+      await waitForSession(6000);
+      localStorage.setItem('tsff_torrent_username', username);
+      state.username = username;
+      els.password.value = '';
+      setLoggedIn(true);
+      setStatus(els.loginStatus, 'Login successful through fallback.', 'ok');
+      setStatus(els.actionStatus, 'Connected to qBittorrent.', 'ok');
+      state.syncRid = 0;
+      await syncTorrents();
+      startAutoRefresh();
+    }
+
+    async function logout() {
+      try {
+        await fetch('/api/v2/auth/logout', { method: 'POST' });
+      } catch (_) {}
+      setLoggedIn(false);
+      state.torrents = [];
+      renderTable();
+      setStatus(els.loginStatus, 'Signed out.', 'ok');
+    }
+
+    function filteredTorrents() {
+      const filter = els.filterState.value;
+      const selectedCategory = els.categoryFilter.value;
+      const query = els.searchInput.value.trim().toLowerCase();
+      return state.torrents.filter((torrent) => {
+        const torrentCategory = String(torrent.category || '');
+        const nameOk = !query || String(torrent.name || '').toLowerCase().includes(query);
+        if (!nameOk) {
+          return false;
+        }
+        if (selectedCategory === '__uncategorized__' && torrentCategory) {
+          return false;
+        }
+        if (selectedCategory !== '__all__' && selectedCategory !== '__uncategorized__' && torrentCategory !== selectedCategory) {
+          return false;
+        }
+        if (filter === 'needs-seed') {
+          return needsSeed(torrent);
+        }
+        if (filter === 'downloading') {
+          return String(torrent.state || '').toLowerCase().includes('down');
+        }
+        if (filter === 'uploading') {
+          const stateName = String(torrent.state || '').toLowerCase();
+          return stateName.includes('up') || stateName.includes('seed');
+        }
+        if (filter === 'paused') {
+          return isPaused(torrent);
+        }
+        return true;
+      });
+    }
+
+    function getKnownCategories() {
+      return Array.from(new Set(
+        state.torrents
+          .map((torrent) => String(torrent.category || '').trim())
+          .filter(Boolean)
+      )).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }));
+    }
+
+    function syncCategoryFilterOptions() {
+      const previousValue = els.categoryFilter.value || '__all__';
+      const categories = getKnownCategories();
+      const hasUncategorized = state.torrents.some((torrent) => !String(torrent.category || '').trim());
+      const options = ['<option value="__all__">All categories</option>'];
+      if (hasUncategorized) {
+        options.push('<option value="__uncategorized__">Uncategorized</option>');
+      }
+      categories.forEach((category) => {
+        options.push(`<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`);
+      });
+      els.categoryFilter.innerHTML = options.join('');
+      const nextValue =
+        previousValue === '__all__' ||
+        (previousValue === '__uncategorized__' && hasUncategorized) ||
+        categories.includes(previousValue)
+          ? previousValue
+          : '__all__';
+      els.categoryFilter.value = nextValue;
+      syncAddCategorySuggestions();
+    }
+
+    function syncAddCategorySuggestions() {
+      if (!els.addCategorySuggestions) {
+        return;
+      }
+      const categories = getKnownCategories();
+      els.addCategorySuggestions.innerHTML = categories
+        .map((category) => `<option value="${escapeHtml(category)}"></option>`)
+        .join('');
+    }
+
+    function isActiveTorrent(torrent) {
+      const stateName = String(torrent.state || '').toLowerCase();
+      return (
+        Number(torrent.num_leechs || 0) > 0 ||
+        Number(torrent.dlspeed || 0) > 0 ||
+        Number(torrent.upspeed || 0) > 0 ||
+        stateName.includes('down') ||
+        stateName.includes('meta') ||
+        stateName.includes('check')
+      );
+    }
+
+    function renderTorrentSectionRow(label, count, totalCount) {
+      return `
+        <tr class="section-row">
+          <td colspan="11">
+            <div class="section-block">
+              <span class="section-title">${escapeHtml(label)}</span>
+              <span class="section-count">${count} of ${totalCount} torrent${totalCount === 1 ? '' : 's'}</span>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    function formatSeedPeerStat(activeCount, totalCount) {
+      const active = Number(activeCount || 0);
+      const total = Number(totalCount || 0);
+      return `${active} (${total})`;
+    }
+
+    function formatQbStyleStatus(torrent) {
+      const stateName = String(torrent.state || '').toLowerCase();
+      const forcePrefix = torrent.force_start ? '[F] ' : '';
+      if (isPaused(torrent)) {
+        return 'Paused';
+      }
+      if (stateName.includes('meta')) {
+        return 'Fetching metadata';
+      }
+      if (stateName.includes('check')) {
+        return 'Checking';
+      }
+      if (stateName.includes('down')) {
+        return `${forcePrefix}Downloading`;
+      }
+      if (Number(torrent.progress || 0) >= 1) {
+        return `${forcePrefix}Seeding`;
+      }
+      return escapeHtml(torrent.state || 'Unknown');
+    }
+
+    function renderTorrentRow(torrent) {
+      const progress = Math.max(0, Math.min(100, Number(torrent.progress || 0) * 100));
+      const paused = isPaused(torrent);
+      const demand = needsSeed(torrent);
+      const ratio = Number.isFinite(Number(torrent.ratio)) ? Number(torrent.ratio).toFixed(2) : '0.00';
+      const uploaded = Number(torrent.uploaded || 0);
+      const syncBadge = getTorrentSyncBadge(torrent);
+      const category = String(torrent.category || '').trim() || 'Uncategorized';
+      const statusLabel = formatQbStyleStatus(torrent);
+      const seedsText = formatSeedPeerStat(torrent.num_seeds, torrent.num_complete);
+      const peersText = formatSeedPeerStat(torrent.num_leechs, torrent.num_incomplete);
+      const playPauseIcon = paused
+        ? `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"></path></svg>`
+        : `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9"></path><path d="M10.5 3.5v9"></path></svg>`;
+      const manageIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 1.8v1.6"></path><path d="M8 12.6v1.6"></path><path d="M1.8 8h1.6"></path><path d="M12.6 8h1.6"></path><path d="M3.5 3.5l1.1 1.1"></path><path d="M11.4 11.4l1.1 1.1"></path><path d="M12.5 3.5l-1.1 1.1"></path><path d="M4.6 11.4l-1.1 1.1"></path></svg>`;
+      const deleteIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9"></path><path d="M6.2 2.8h3.6"></path><path d="M5 4.5v7.2"></path><path d="M8 4.5v7.2"></path><path d="M11 4.5v7.2"></path><path d="M4.4 4.5l.5 8.2h6.2l.5-8.2"></path></svg>`;
+      const deleteDataIcon = `<svg class="bin-fill" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.9 2.6h4.2a.7.7 0 0 1 .7.7v.5h1.7a.7.7 0 1 1 0 1.4h-.5l-.5 7.1a1.6 1.6 0 0 1-1.6 1.5H6.1a1.6 1.6 0 0 1-1.6-1.5L4 5.2h-.5a.7.7 0 1 1 0-1.4h1.7v-.5a.7.7 0 0 1 .7-.7Zm.7 0v1.2h2.8V2.6H6.6Zm-.4 3.2a.6.6 0 0 1 .6.6v4.2a.6.6 0 1 1-1.2 0V6.4a.6.6 0 0 1 .6-.6Zm2.4 0a.6.6 0 0 1 .6.6v4.2a.6.6 0 1 1-1.2 0V6.4a.6.6 0 0 1 .6-.6Zm2.4 0a.6.6 0 0 1 .6.6v4.2a.6.6 0 1 1-1.2 0V6.4a.6.6 0 0 1 .6-.6Z"></path></svg>`;
+
+      return `
+        <tr>
+          <td>
+            <div class="torrent-name">${escapeHtml(torrent.name || 'Unnamed torrent')}</div>
+            <span class="torrent-sub">${escapeHtml(torrent.save_path || '')}</span>
+            <span class="torrent-sub tight">${formatBytes(torrent.size)} total, ↑ ${formatBytes(uploaded)} uploaded, ratio ${ratio}</span>
+            <div class="torrent-pill-row">
+              <span
+                class="pill${demand ? ' need-seed' : ''}"
+                ${demand ? `data-peer-tooltip="true" data-torrent-hash="${escapeAttribute(torrent.hash)}" data-leecher-count="${escapeAttribute(torrent.num_leechs || 0)}"` : ''}
+              >${demand ? `Leechers waiting: ${torrent.num_leechs}` : 'No active seed demand detected'}</span>
+              <span class="pill ${syncBadge.className}">${escapeHtml(syncBadge.text)}</span>
+            </div>
+          </td>
+          <td>${formatBytes(torrent.size)}</td>
+          <td>
+            <strong>${progress.toFixed(1)}%</strong>
+            <div class="progress"><span style="width:${progress}%;"></span></div>
+          </td>
+          <td>${statusLabel}</td>
+          <td>${formatSpeed(torrent.dlspeed)}</td>
+          <td>${formatSpeed(torrent.upspeed)}</td>
+          <td>${seedsText}</td>
+          <td>${peersText}</td>
+          <td>${ratio}</td>
+          <td>${escapeHtml(category)}</td>
+          <td>
+            <div class="actions">
+              <button class="secondary" type="button" title="${paused ? 'Resume torrent' : 'Pause torrent'}" aria-label="${paused ? 'Resume torrent' : 'Pause torrent'}" onclick="torrentActions.${paused ? 'resume' : 'pause'}('${torrent.hash}')">${playPauseIcon}</button>
+              <button class="secondary" type="button" title="Manage torrent" aria-label="Manage torrent" onclick="torrentActions.manage('${torrent.hash}')">${manageIcon}</button>
+              <button class="danger" type="button" title="Delete torrent and keep data" aria-label="Delete torrent and keep data" onclick="torrentActions.deleteKeep('${torrent.hash}')">${deleteIcon}</button>
+              <button class="warn" type="button" title="Delete torrent and data" aria-label="Delete torrent and data" onclick="torrentActions.deleteWithData('${torrent.hash}')">${deleteDataIcon}</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    function renderTable() {
+      hidePeerTooltip();
+      const rows = filteredTorrents();
+      const seedDemand = state.torrents.filter(needsSeed).length;
+      els.seedDemandCount.textContent = String(seedDemand);
+      els.torrentCount.textContent = String(state.torrents.length);
+      els.emptyState.classList.toggle('hidden', rows.length > 0);
+
+      if (!rows.length) {
+        els.torrentTable.innerHTML = '';
+        return;
+      }
+
+      const activeRows = rows.filter(isActiveTorrent);
+      const inactiveRows = rows.filter((torrent) => !isActiveTorrent(torrent));
+      const totalCount = state.torrents.length;
+      const html = [];
+      if (activeRows.length) {
+        html.push(renderTorrentSectionRow('Active', activeRows.length, totalCount));
+        html.push(...activeRows.map(renderTorrentRow));
+      }
+      if (state.showInactive && inactiveRows.length) {
+        html.push(renderTorrentSectionRow('Inactive', inactiveRows.length, totalCount));
+        html.push(...inactiveRows.map(renderTorrentRow));
+      }
+      if (!activeRows.length && !state.showInactive && inactiveRows.length) {
+        html.push(renderTorrentSectionRow('Inactive hidden', inactiveRows.length, totalCount));
+      }
+      els.torrentTable.innerHTML = html.join('');
+    }
+
+    async function refreshTorrents({ silent = false } = {}) {
+      if (!silent) {
+        setStatus(els.actionStatus, 'Refreshing torrent list...');
+      }
+      const response = await api('/api/v2/torrents/info?sort=added_on&reverse=true');
+      state.torrents = sortTorrents(await response.json());
+      state.syncRid = 0;
+      syncCategoryFilterOptions();
+      renderTable();
+      updateRefreshStamp();
+      if (!silent) {
+        setStatus(els.actionStatus, `Loaded ${state.torrents.length} torrent(s).`, 'ok');
+      }
+    }
+
+    async function syncTorrents({ silent = false } = {}) {
+      if (state.syncInFlight) {
+        return;
+      }
+      state.syncInFlight = true;
+      try {
+        if (!silent) {
+          setStatus(els.actionStatus, state.syncRid ? 'Syncing torrent updates...' : 'Loading torrent list...');
+        }
+        const response = await api(`/api/v2/sync/maindata?rid=${encodeURIComponent(state.syncRid)}`);
+        const payload = await response.json();
+        applyTorrentSync(payload);
+        syncCategoryFilterOptions();
+        renderTable();
+        updateRefreshStamp();
+        if (!silent) {
+          setStatus(els.actionStatus, `Loaded ${state.torrents.length} torrent(s).`, 'ok');
+        }
+      } catch (error) {
+        state.syncRid = 0;
+        if (!silent) {
+          throw error;
+        }
+      } finally {
+        state.syncInFlight = false;
+      }
+    }
+
+    function renderBrowser() {
+      const current = normalizePath(state.manage.browserPath) || '/downloads';
+      const segments = current.replace(/^\/+/, '').split('/').filter(Boolean);
+      const crumbs = [];
+      let running = '';
+      segments.forEach((segment) => {
+        running = running ? `${running}/${segment}` : `/${segment}`;
+        crumbs.push({ label: segment, path: running });
+      });
+      els.pickerBreadcrumbs.innerHTML = crumbs.map((crumb, index) => `
+        <button class="crumb" type="button" data-path="${escapeHtml(crumb.path)}">${index === 0 ? '/' : ''}${escapeHtml(crumb.label)}</button>
+      `).join('');
+      els.pickerList.innerHTML = state.manage.browserEntries.map((entry) => {
+        const targetPath = joinPath(current, entry.name);
+        const currentClass = normalizePath(els.manageSelectedLocation.value) === normalizePath(targetPath) ? ' current' : '';
+        return `
+          <button
+            class="picker-item ${entry.type === 'file' ? 'file' : ''}${currentClass}"
+            type="button"
+            ${entry.type === 'directory' ? `data-path="${escapeHtml(targetPath)}"` : 'disabled'}
+          >
+            <span class="picker-icon">${entry.type === 'directory' ? 'DIR' : 'FILE'}</span>
+            <span class="picker-label">
+              <strong>${escapeHtml(entry.name)}</strong>
+              <span class="picker-meta">${entry.type === 'directory' ? 'Folder' : formatBytes(entry.size)}</span>
+            </span>
+            <span class="picker-meta picker-open">${entry.type === 'directory' ? 'Open' : ''}</span>
+          </button>
+        `;
+      }).join('') || '<div class="hint">This folder is empty.</div>';
+      els.pickerUpButton.disabled = current === '/downloads';
+    }
+
+    function renderRenameRows(entries, kind) {
+      if (!entries.length) {
+        return `<div class="hint">No ${kind === 'folder' ? 'folders' : 'files'} available for this torrent.</div>`;
+      }
+      return entries.map((entry) => {
+        const oldPath = kind === 'folder' ? entry : entry.name;
+        const sizeText = kind === 'file' ? formatBytes(entry.size) : `${oldPath.split('/').length} level${oldPath.split('/').length === 1 ? '' : 's'}`;
+        return `
+          <div class="entry-row">
+            <div class="entry-path">
+              <strong>${escapeHtml(oldPath)}</strong>
+              <span>${kind === 'folder' ? 'Folder path inside torrent' : `${sizeText} file`}</span>
+            </div>
+            <div class="entry-rename">
+              <input
+                type="text"
+                value="${escapeHtml(basename(oldPath))}"
+                data-entry-kind="${kind}"
+                data-entry-old-path="${escapeHtml(oldPath)}"
+                placeholder="New ${kind} name"
+              >
+            </div>
+            <button
+              class="secondary"
+              type="button"
+              data-action="rename-entry"
+              data-entry-kind="${kind}"
+              data-entry-old-path="${escapeHtml(oldPath)}"
+            >Rename</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderManageModal() {
+      const torrent = state.manage.torrent;
+      if (!torrent) {
+        els.manageModal.classList.add('hidden');
+        return;
+      }
+
+      els.manageTitle.textContent = torrent.name || 'Manage torrent';
+      els.manageMeta.textContent = `${torrent.hash} • ${formatBytes(torrent.size)} • ${torrent.num_leechs || 0} leechers • ${torrent.num_seeds || 0} seeds`;
+      els.manageCurrentLocation.value = torrent.save_path || '/downloads';
+      if (!els.manageSelectedLocation.value) {
+        els.manageSelectedLocation.value = torrent.save_path || '/downloads';
+      }
+      if (!els.manageCustomLocation.value) {
+        els.manageCustomLocation.value = els.manageSelectedLocation.value;
+      }
+      renderBrowser();
+      els.manageFolders.innerHTML = renderRenameRows(state.manage.folders, 'folder');
+      els.manageFiles.innerHTML = renderRenameRows(state.manage.files, 'file');
+      els.manageModal.classList.remove('hidden');
+    }
+
+    function parseMagnetName(url, index) {
+      try {
+        const parsed = new URL(url);
+        const displayName = parsed.searchParams.get('dn');
+        if (displayName && displayName.trim()) {
+          return displayName.trim();
+        }
+      } catch (_) {
+      }
+      return `Magnet ${index + 1}`;
+    }
+
+    function stripTorrentExtension(name) {
+      const value = String(name || '').trim();
+      return value.replace(/\.torrent$/i, '') || value;
+    }
+
+    function sanitizePathSegment(value, fallback = '') {
+      const cleaned = String(value || '').trim().replaceAll('/', '').replaceAll('\\', '');
+      return cleaned || fallback;
+    }
+
+    function utf8Decode(bytes) {
+      try {
+        return new TextDecoder('utf-8').decode(bytes);
+      } catch (_) {
+        return Array.from(bytes, (value) => String.fromCharCode(value)).join('');
+      }
+    }
+
+    function readBencodeNode(bytes, startIndex = 0) {
+      const marker = bytes[startIndex];
+      if (marker === 105) {
+        let cursor = startIndex + 1;
+        while (cursor < bytes.length && bytes[cursor] !== 101) {
+          cursor += 1;
+        }
+        if (cursor >= bytes.length) {
+          throw new Error('Invalid torrent file: unterminated integer.');
+        }
+        return {
+          type: 'int',
+          value: Number.parseInt(utf8Decode(bytes.slice(startIndex + 1, cursor)), 10),
+          start: startIndex,
+          end: cursor + 1
+        };
+      }
+      if (marker === 108) {
+        const value = [];
+        let cursor = startIndex + 1;
+        while (cursor < bytes.length && bytes[cursor] !== 101) {
+          const child = readBencodeNode(bytes, cursor);
+          value.push(child);
+          cursor = child.end;
+        }
+        if (cursor >= bytes.length) {
+          throw new Error('Invalid torrent file: unterminated list.');
+        }
+        return { type: 'list', value, start: startIndex, end: cursor + 1 };
+      }
+      if (marker === 100) {
+        const value = {};
+        let cursor = startIndex + 1;
+        while (cursor < bytes.length && bytes[cursor] !== 101) {
+          const keyNode = readBencodeNode(bytes, cursor);
+          if (keyNode.type !== 'bytes') {
+            throw new Error('Invalid torrent file: dictionary key is not a string.');
+          }
+          cursor = keyNode.end;
+          const child = readBencodeNode(bytes, cursor);
+          value[keyNode.text] = child;
+          cursor = child.end;
+        }
+        if (cursor >= bytes.length) {
+          throw new Error('Invalid torrent file: unterminated dictionary.');
+        }
+        return { type: 'dict', value, start: startIndex, end: cursor + 1 };
+      }
+      if (marker >= 48 && marker <= 57) {
+        let cursor = startIndex;
+        while (cursor < bytes.length && bytes[cursor] !== 58) {
+          cursor += 1;
+        }
+        if (cursor >= bytes.length) {
+          throw new Error('Invalid torrent file: bad byte string length.');
+        }
+        const length = Number.parseInt(utf8Decode(bytes.slice(startIndex, cursor)), 10);
+        const valueStart = cursor + 1;
+        const valueEnd = valueStart + length;
+        if (!Number.isFinite(length) || valueEnd > bytes.length) {
+          throw new Error('Invalid torrent file: byte string length exceeds file.');
+        }
+        const raw = bytes.slice(valueStart, valueEnd);
+        return {
+          type: 'bytes',
+          value: raw,
+          text: utf8Decode(raw),
+          start: startIndex,
+          end: valueEnd
+        };
+      }
+      throw new Error('Invalid torrent file: unsupported bencode token.');
+    }
+
+    async function sha1Hex(bytes) {
+      const digest = await crypto.subtle.digest('SHA-1', bytes);
+      return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
+    }
+
+    function torrentString(node) {
+      if (!node) {
+        return '';
+      }
+      if (node.type === 'bytes') {
+        return node.text || '';
+      }
+      if (node.type === 'int') {
+        return String(node.value ?? '');
+      }
+      return '';
+    }
+
+    function torrentListStrings(node) {
+      if (!node || node.type !== 'list') {
+        return [];
+      }
+      return node.value.map((child) => sanitizePathSegment(torrentString(child))).filter(Boolean);
+    }
+
+    function replaceLeadingPathSegment(path, fromSegment, toSegment) {
+      const normalizedPath = String(path || '').trim();
+      if (!normalizedPath || !fromSegment || fromSegment === toSegment) {
+        return normalizedPath;
+      }
+      if (normalizedPath === fromSegment) {
+        return toSegment;
+      }
+      const prefix = `${fromSegment}/`;
+      return normalizedPath.startsWith(prefix)
+        ? `${toSegment}/${normalizedPath.slice(prefix.length)}`
+        : normalizedPath;
+    }
+
+    function buildDesiredFolderPath(originalPath, entry, desiredTopLevelName) {
+      const parts = String(originalPath || '').split('/').filter(Boolean);
+      if (!parts.length) {
+        return desiredTopLevelName;
+      }
+      const folderPlanMap = new Map((entry.folderRenames || []).map((item) => [item.originalPath, item]));
+      const built = [];
+      parts.forEach((segment, index) => {
+        if (index === 0) {
+          built.push(desiredTopLevelName || segment);
+          return;
+        }
+        const currentOriginalPath = parts.slice(0, index + 1).join('/');
+        const planned = folderPlanMap.get(currentOriginalPath);
+        built.push(sanitizePathSegment(planned?.desiredBaseName, segment));
+      });
+      return built.join('/');
+    }
+
+    function detectCurrentTopLevelName(currentFiles, entry) {
+      const firstPath = String(currentFiles?.[0]?.name || '').trim();
+      if (!firstPath) {
+        return sanitizePathSegment(entry.desiredName, entry.metadata?.topLevelOriginalName || entry.originalName);
+      }
+      if (!entry.metadata?.isMultiFile) {
+        return basename(firstPath);
+      }
+      return firstPath.split('/').filter(Boolean)[0] || sanitizePathSegment(entry.desiredName, entry.metadata?.topLevelOriginalName || entry.originalName);
+    }
+
+    async function parseTorrentUploadMetadata(file) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const root = readBencodeNode(bytes);
+      if (root.type !== 'dict') {
+        throw new Error('Torrent root is not a dictionary.');
+      }
+      const infoNode = root.value.info;
+      if (!infoNode || infoNode.type !== 'dict') {
+        throw new Error('Torrent info dictionary is missing.');
+      }
+
+      const infoHash = await sha1Hex(bytes.slice(infoNode.start, infoNode.end));
+      const info = infoNode.value;
+      const topLevelOriginalName = sanitizePathSegment(
+        torrentString(info['name.utf-8']) || torrentString(info.name),
+        stripTorrentExtension(file.name)
+      );
+      const fileNodes = info.files?.type === 'list' ? info.files.value : null;
+      const isMultiFile = Array.isArray(fileNodes);
+      const files = isMultiFile
+        ? fileNodes.map((node, index) => {
+            const dict = node?.type === 'dict' ? node.value : {};
+            const pathSegments = torrentListStrings(dict['path.utf-8']) || torrentListStrings(dict.path);
+            const leafPath = pathSegments.length ? pathSegments.join('/') : `File ${index + 1}`;
+            return {
+              originalPath: joinPath(topLevelOriginalName, leafPath),
+              size: Number(dict.length?.value || 0),
+              isGeneratedPlaceholder: !pathSegments.length && isGeneratedFilePlaceholder(leafPath)
+            };
+          })
+        : [{
+          originalPath: topLevelOriginalName,
+          size: Number(info.length?.value || 0),
+          isGeneratedPlaceholder: false
+        }];
+      const folders = buildFolderEntries(files.map((item) => ({ name: item.originalPath, size: item.size })));
+
+      return {
+        infoHash,
+        isMultiFile,
+        topLevelOriginalName,
+        files,
+        folders
+      };
+    }
+
+    function renderQueuedRenameRows(entries, kind, index, mode) {
+      if (!entries.length) {
+        return `<div class="hint">No ${kind === 'folder' ? 'folders' : 'files'} available for this torrent.</div>`;
+      }
+      return entries.map((entry) => `
+        <div class="entry-row">
+          <div class="entry-path">
+            <strong>${escapeHtml(entry.originalPath)}</strong>
+            <span>${kind === 'folder' ? 'Folder path inside torrent' : `${formatBytes(entry.size || 0)} file`}</span>
+          </div>
+          <div class="entry-rename">
+            <input
+              type="text"
+              value="${escapeHtml(entry.desiredBaseName)}"
+              data-add-upload-${mode}-index="${index}"
+              data-add-upload-${mode}-path="${escapeHtml(entry.originalPath)}"
+              placeholder="New ${kind} name"
+            >
+          </div>
+          <button
+            class="secondary"
+            type="button"
+            data-action="reset-upload-${mode}-name"
+            data-add-upload-${mode}-index="${index}"
+            data-add-upload-${mode}-path="${escapeHtml(entry.originalPath)}"
+          >Reset</button>
+        </div>
+      `).join('');
+    }
+
+    function isGeneratedFilePlaceholder(name) {
+      return /^File \d+$/i.test(String(name || '').trim());
+    }
+
+    function getPreparedAddEntries() {
+      return state.add.mode === 'upload' ? state.add.uploads : state.add.magnets;
+    }
+
+    function getCurrentPreparedEntry() {
+      const entries = getPreparedAddEntries();
+      if (!entries.length) {
+        return null;
+      }
+      const safeIndex = Math.max(0, Math.min(state.add.currentIndex || 0, entries.length - 1));
+      return entries[safeIndex] || null;
+    }
+
+    function renderAddMagnetRows() {
+      const entry = getCurrentPreparedEntry();
+      if (!entry) {
+        els.addMagnetRows.innerHTML = `<div class="hint">Choose ${state.add.mode === 'upload' ? 'torrent files' : 'magnet links'} first.</div>`;
+        return;
+      }
+
+      if (state.add.mode === 'upload') {
+        const folderSection = entry.folderRenames?.length
+          ? `
+            <div class="entry-section">
+              <h3>Folders Inside Torrent</h3>
+              ${renderQueuedRenameRows(entry.folderRenames, 'folder', state.add.currentIndex, 'folder')}
+            </div>
+          `
+          : '';
+        const visibleFileRenames = (entry.fileRenames || []).filter((item) => !item.isGeneratedPlaceholder);
+        const fileSection = visibleFileRenames.length
+          ? `
+            <div class="entry-section">
+              <h3>Files Inside Torrent</h3>
+              ${renderQueuedRenameRows(visibleFileRenames, 'file', state.add.currentIndex, 'file')}
+            </div>
+          `
+          : '';
+        const sameAsParentToggle = `
+          <div class="compact-row" style="margin-top:10px;">
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.92rem; color:var(--muted);">
+              <input id="addUseDesiredNameForParent" type="checkbox" ${state.add.useDesiredNameForParent ? 'checked' : ''}>
+              <span>Same as Parent name</span>
+            </label>
+          </div>
+        `;
+        const parseStatus = entry.parseError
+          ? `<div class="hint">Internal rename preview unavailable for this torrent file. ${escapeHtml(entry.parseError)}</div>`
+          : (entry.metadata
+            ? `<div class="hint">These names come from the actual \`.torrent\` metadata and will be applied right after qBittorrent accepts this upload.</div>`
+            : '<div class="hint">Reading torrent metadata...</div>');
+        els.addMagnetRows.innerHTML = `
+          <div class="entry-row">
+            <div class="entry-path">
+              <strong>${escapeHtml(entry.originalName)}</strong>
+              <span>${escapeHtml(entry.sourceFileName || entry.originalName)} • top-level torrent name</span>
+            </div>
+            <div class="entry-rename">
+              <input
+                type="text"
+                value="${escapeHtml(entry.desiredName)}"
+                data-add-upload-index="${state.add.currentIndex}"
+                placeholder="Top-level name to use"
+              >
+            </div>
+            <button
+              class="secondary"
+              type="button"
+              data-action="reset-upload-name"
+              data-add-upload-index="${state.add.currentIndex}"
+            >Reset</button>
+          </div>
+          ${sameAsParentToggle}
+          ${parseStatus}
+          ${folderSection}
+          ${fileSection}
+        `;
+        return;
+      }
+
+      const sameAsParentToggle = `
+        <div class="compact-row" style="margin-top:10px;">
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.92rem; color:var(--muted);">
+            <input id="addUseDesiredNameForParent" type="checkbox" ${state.add.useDesiredNameForParent ? 'checked' : ''}>
+            <span>Same as Parent name</span>
+          </label>
+        </div>
+      `;
+      els.addMagnetRows.innerHTML = `
+        <div class="entry-row">
+          <div class="entry-path">
+            <strong>${escapeHtml(entry.originalName)}</strong>
+            <span>Metadata not loaded yet. This is the magnet display name or fallback label.</span>
+          </div>
+          <div class="entry-rename">
+            <input
+              type="text"
+              value="${escapeHtml(entry.desiredName)}"
+              data-add-magnet-index="${state.add.currentIndex}"
+              placeholder="Top-level name to use"
+            >
+          </div>
+          <button
+            class="secondary"
+            type="button"
+            data-action="reset-magnet-name"
+            data-add-magnet-index="${state.add.currentIndex}"
+          >Reset</button>
+        </div>
+        ${sameAsParentToggle}
+      `;
+    }
+
+    function renderAddBrowser() {
+      const current = normalizePath(state.add.browserPath) || '/downloads';
+      const segments = current.replace(/^\/+/, '').split('/').filter(Boolean);
+      const crumbs = [];
+      let running = '';
+      segments.forEach((segment) => {
+        running = running ? `${running}/${segment}` : `/${segment}`;
+        crumbs.push({ label: segment, path: running });
+      });
+      els.addPickerBreadcrumbs.innerHTML = crumbs.map((crumb, index) => `
+        <button class="crumb" type="button" data-path="${escapeHtml(crumb.path)}">${index === 0 ? '/' : ''}${escapeHtml(crumb.label)}</button>
+      `).join('');
+      els.addPickerList.innerHTML = state.add.browserEntries.map((entry) => {
+        const targetPath = joinPath(current, entry.name);
+        const currentClass = normalizePath(state.add.selectedLocation) === normalizePath(targetPath) ? ' current' : '';
+        return `
+          <button
+            class="picker-item ${entry.type === 'file' ? 'file' : ''}${currentClass}"
+            type="button"
+            ${entry.type === 'directory' ? `data-path="${escapeHtml(targetPath)}"` : 'disabled'}
+          >
+            <span class="picker-icon">${entry.type === 'directory' ? 'DIR' : 'FILE'}</span>
+            <span class="picker-label">
+              <strong>${escapeHtml(entry.name)}</strong>
+              <span class="picker-meta">${entry.type === 'directory' ? 'Folder' : formatBytes(entry.size)}</span>
+            </span>
+            <span class="picker-meta picker-open">${entry.type === 'directory' ? 'Open' : ''}</span>
+          </button>
+        `;
+      }).join('') || '<div class="hint">This folder is empty.</div>';
+      els.addPickerUpButton.disabled = current === '/downloads';
+    }
+
+    function renderAddMagnetModal() {
+      const entries = getPreparedAddEntries();
+      const total = entries.length;
+      const currentNumber = Math.min(total, (state.add.currentIndex || 0) + 1);
+      const currentEntry = getCurrentPreparedEntry();
+      if (state.add.mode === 'upload') {
+        els.addMagnetTitle.textContent = `Choose destination for torrent ${currentNumber} of ${total}`;
+        els.addMagnetMeta.textContent = currentEntry
+          ? `This upload batch uses the same picker and category flow as magnets. The last chosen folder and category become the defaults for the next torrent in this batch. You can also rename the top-level torrent name plus the actual folders and files before upload finishes.`
+          : 'Choose the destination and rename plan for this torrent file.';
+        els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Upload These Torrents';
+      } else {
+        els.addMagnetTitle.textContent = `Choose destination for torrent ${currentNumber} of ${total}`;
+        els.addMagnetMeta.textContent = 'Magnets now use the same per-torrent flow as uploaded .torrent files. The last chosen folder and category become the defaults for the next magnet in this batch.';
+        els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Add These Magnets';
+      }
+      els.addSelectedLocation.value = state.add.selectedLocation || '/downloads';
+      els.addCustomLocation.value = state.add.selectedLocation || '/downloads';
+      els.addCategoryInput.value = state.add.selectedCategory || '';
+      syncAddCategorySuggestions();
+      renderAddBrowser();
+      renderAddMagnetRows();
+      els.addMagnetModal.classList.remove('hidden');
+    }
+
+    async function loadAddBrowserPath(path) {
+      let targetPath = normalizePath(path) || '/downloads';
+      const attempted = new Set();
+      let warning = '';
+
+      while (targetPath && !attempted.has(targetPath)) {
+        attempted.add(targetPath);
+        setStatus(els.addMagnetStatus, `Loading ${targetPath} ...`);
+        try {
+          const response = await api(encodeDownloadsPath(targetPath));
+          state.add.browserPath = targetPath;
+          state.add.browserEntries = normalizeBrowserEntries(await response.json());
+          if (!state.add.selectedLocation) {
+            state.add.selectedLocation = targetPath;
+          }
+          setStatus(
+            els.addMagnetStatus,
+            warning || `Choose the destination folder, then submit the ${state.add.mode === 'upload' ? 'torrent batch' : 'magnets'}.`,
+            'ok'
+          );
+          renderAddMagnetModal();
+          return;
+        } catch (error) {
+          const message = String(error && error.message ? error.message : error);
+          if (!message.includes('HTTP 404')) {
+            throw error;
+          }
+          if (targetPath === '/downloads') {
+            break;
+          }
+          warning = `Saved folder not found. Showing ${dirname(targetPath) || '/downloads'} instead.`;
+          targetPath = dirname(targetPath) || '/downloads';
+        }
+      }
+
+      state.add.browserPath = '/downloads';
+      state.add.browserEntries = [];
+      setStatus(els.addMagnetStatus, 'Folder not found. Showing /downloads instead.', 'error');
+      renderAddMagnetModal();
+    }
+
+    async function createFolderInAddBrowser() {
+      const basePath = normalizePath(state.add.browserPath) || '/downloads';
+      const folderName = String(els.addNewFolderName.value || '').trim().replaceAll('/', '');
+      if (!folderName) {
+        setStatus(els.addMagnetStatus, 'Enter a folder name first.', 'error');
+        return;
+      }
+      const targetPath = joinPath(basePath, folderName);
+      els.addCreateFolderButton.disabled = true;
+      setStatus(els.addMagnetStatus, `Creating ${targetPath} ...`);
+      try {
+        await api(encodeDownloadsPath(targetPath), {
+          method: 'MKCOL'
+        });
+        els.addNewFolderName.value = '';
+        state.add.selectedLocation = targetPath;
+        els.addSelectedLocation.value = targetPath;
+        els.addCustomLocation.value = targetPath;
+        setStatus(els.addMagnetStatus, `Created ${targetPath}.`, 'ok');
+        await loadAddBrowserPath(targetPath);
+      } catch (error) {
+        setStatus(els.addMagnetStatus, `Create folder failed.\n${error.message}`, 'error');
+      } finally {
+        els.addCreateFolderButton.disabled = false;
+      }
+    }
+
+    function closeAddMagnetModal() {
+      state.add.mode = 'magnet';
+      state.add.currentIndex = 0;
+      state.add.selectedCategory = '';
+      state.add.useDesiredNameForParent = true;
+      els.addMagnetModal.classList.add('hidden');
+    }
+
+    function advancePreparedAddStep() {
+      const entry = getCurrentPreparedEntry();
+      if (!entry) {
+        return false;
+      }
+      const destination = normalizePath(els.addCustomLocation.value || state.add.selectedLocation || '/downloads');
+      const category = String(els.addCategoryInput.value || state.add.selectedCategory || '').trim();
+      const useDesiredNameForParent = Boolean(document.getElementById('addUseDesiredNameForParent')?.checked);
+      if (!destination) {
+        setStatus(els.addMagnetStatus, 'Choose a destination first.', 'error');
+        return false;
+      }
+      entry.savePath = destination;
+      entry.category = category;
+      entry.useDesiredNameForParent = useDesiredNameForParent;
+      entry.desiredName = String(entry.desiredName || '').trim() || entry.originalName;
+      state.add.selectedLocation = destination;
+      state.add.selectedCategory = category;
+      state.add.useDesiredNameForParent = useDesiredNameForParent;
+      const nextIndex = (state.add.currentIndex || 0) + 1;
+      const entries = getPreparedAddEntries();
+      if (nextIndex >= entries.length) {
+        return true;
+      }
+      const currentName = entry.originalName;
+      state.add.currentIndex = nextIndex;
+      const nextEntry = getCurrentPreparedEntry();
+      if (nextEntry && !nextEntry.savePath) {
+        nextEntry.savePath = destination;
+      }
+      if (nextEntry && !String(nextEntry.category || '').trim()) {
+        nextEntry.category = category;
+      }
+      if (nextEntry && typeof nextEntry.useDesiredNameForParent !== 'boolean') {
+        nextEntry.useDesiredNameForParent = useDesiredNameForParent;
+      }
+      state.add.selectedLocation = nextEntry?.savePath || destination;
+      state.add.selectedCategory = String(nextEntry?.category || category || '').trim();
+      state.add.useDesiredNameForParent = Boolean(
+        typeof nextEntry?.useDesiredNameForParent === 'boolean'
+          ? nextEntry.useDesiredNameForParent
+          : useDesiredNameForParent
+      );
+      els.addSelectedLocation.value = state.add.selectedLocation;
+      els.addCustomLocation.value = state.add.selectedLocation;
+      els.addCategoryInput.value = state.add.selectedCategory;
+      state.add.browserPath = state.add.selectedLocation;
+      setStatus(
+        els.addMagnetStatus,
+        `Saved ${currentName} to ${destination}${category ? ` in ${category}` : ''}. Choose destination for torrent ${state.add.currentIndex + 1} of ${entries.length}.`,
+        'ok'
+      );
+      loadAddBrowserPath(state.add.selectedLocation).catch((error) => {
+        setStatus(els.addMagnetStatus, `Folder load failed.\n${error.message}`, 'error');
+      });
+      return false;
+    }
+
+    async function submitPreparedMagnets() {
+      els.submitMagnetButton.disabled = true;
+      els.cancelMagnetButton.disabled = true;
+      els.addMagnetCloseButton.disabled = true;
+      els.addMagnetButton.disabled = true;
+
+      try {
+        const entries = getPreparedAddEntries();
+        if (!entries.length) {
+          setStatus(els.addMagnetStatus, `No ${state.add.mode === 'upload' ? 'torrent files' : 'magnet links'} queued.`, 'error');
+          return;
+        }
+        const shouldSubmit = advancePreparedAddStep();
+        if (!shouldSubmit) {
+          return;
+        }
+
+        if (state.add.mode === 'upload') {
+          els.uploadButton.disabled = true;
+          setStatus(els.addMagnetStatus, `Uploading ${state.add.uploads.length} torrent file(s) with saved destinations...`);
+          for (const entry of state.add.uploads) {
+            const form = new FormData();
+            form.append('torrents', entry.file, entry.file.name);
+            form.append('savepath', entry.savePath || '/downloads');
+            const desiredName = String(entry.desiredName || '').trim();
+            const category = String(entry.category || '').trim();
+            if (shouldSendAddRename(entry)) {
+              form.append('rename', desiredName);
+            }
+            if (category) {
+              form.append('category', category);
+            }
+            await api('/api/v2/torrents/add', {
+              method: 'POST',
+              body: form
+            });
+            await renameUploadedTorrentContents(entry);
+            requestBackgroundGcsSync({ immediate: true });
+          }
+          els.torrentFiles.value = '';
+          const uploadedCount = state.add.uploads.length;
+          state.add.uploads = [];
+          closeAddMagnetModal();
+          setStatus(els.actionStatus, `Uploaded ${uploadedCount} torrent file(s).`, 'ok');
+        } else {
+          setStatus(els.addMagnetStatus, `Adding ${state.add.magnets.length} magnet link(s) with saved destinations and categories...`);
+          for (const entry of state.add.magnets) {
+            const body = new URLSearchParams({
+              urls: entry.url,
+              savepath: entry.savePath || '/downloads'
+            });
+            const desiredName = String(entry.desiredName || '').trim();
+            const category = String(entry.category || '').trim();
+            if (desiredName) {
+              body.set('rename', desiredName);
+            }
+            if (category) {
+              body.set('category', category);
+            }
+            await api('/api/v2/torrents/add', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+              },
+              body: body.toString()
+            });
+            await renameMagnetTorrentContents(entry);
+            requestBackgroundGcsSync({ immediate: true });
+          }
+          els.magnetInput.value = '';
+          state.add.magnets = [];
+          closeAddMagnetModal();
+          setStatus(els.actionStatus, `Added ${entries.length} magnet link(s).`, 'ok');
+        }
+        await syncTorrents({ silent: true });
+      } catch (error) {
+        setStatus(els.addMagnetStatus, `Failed to ${state.add.mode === 'upload' ? 'upload torrent files' : 'add magnets'}.\n${error.message}`, 'error');
+      } finally {
+        els.submitMagnetButton.disabled = false;
+        els.cancelMagnetButton.disabled = false;
+        els.addMagnetCloseButton.disabled = false;
+        els.addMagnetButton.disabled = false;
+        els.uploadButton.disabled = false;
+      }
+    }
+
+    async function loadBrowserPath(path) {
+      let targetPath = normalizePath(path) || '/downloads';
+      const attempted = new Set();
+      let warning = '';
+
+      while (targetPath && !attempted.has(targetPath)) {
+        attempted.add(targetPath);
+        setStatus(els.manageStatus, `Loading ${targetPath} ...`);
+        try {
+          const response = await api(encodeDownloadsPath(targetPath));
+          const payload = await response.json();
+          state.manage.browserPath = targetPath;
+          state.manage.browserEntries = normalizeBrowserEntries(payload);
+          setStatus(els.manageStatus, warning || 'Folder browser ready.', 'ok');
+          renderManageModal();
+          return;
+        } catch (error) {
+          const message = String(error && error.message ? error.message : error);
+          if (!message.includes('HTTP 404')) {
+            throw error;
+          }
+          if (targetPath === '/downloads') {
+            break;
+          }
+          warning = `Saved folder not found. Showing ${dirname(targetPath) || '/downloads'} instead.`;
+          targetPath = dirname(targetPath) || '/downloads';
+        }
+      }
+
+      state.manage.browserPath = '/downloads';
+      state.manage.browserEntries = [];
+      setStatus(els.manageStatus, 'Saved folder not found. Showing /downloads instead.', 'error');
+      renderManageModal();
+    }
+
+    async function loadTorrentFiles(hash, { preserveStatus = false } = {}) {
+      const torrent = findTorrent(hash);
+      if (!torrent) {
+        throw new Error('Torrent not found in current list.');
+      }
+      if (!preserveStatus) {
+        setStatus(els.manageStatus, 'Loading current files and folders...');
+      }
+      const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+      const files = await response.json();
+      state.manage = {
+        torrent,
+        files,
+        folders: buildFolderEntries(files),
+        browserPath: normalizePath(torrent.save_path || '/downloads') || '/downloads',
+        browserEntries: []
+      };
+      if (!preserveStatus) {
+        setStatus(els.manageStatus, 'Ready. Rename files or move the torrent.', 'ok');
+      }
+      await loadBrowserPath(state.manage.browserPath);
+    }
+
+    async function openManageModal(hash) {
+      els.manageCustomLocation.value = '';
+      els.manageSelectedLocation.value = '';
+      await loadTorrentFiles(hash);
+    }
+
+    function closeManageModal() {
+      state.manage = {
+        torrent: null,
+        files: [],
+        folders: [],
+        browserPath: '/downloads',
+        browserEntries: []
+      };
+      els.manageModal.classList.add('hidden');
+      els.manageFolders.innerHTML = '';
+      els.manageFiles.innerHTML = '';
+      els.manageCustomLocation.value = '';
+      els.manageSelectedLocation.value = '';
+      els.pickerBreadcrumbs.innerHTML = '';
+      els.pickerList.innerHTML = '';
+    }
+
+    async function moveManagedTorrent() {
+      const torrent = state.manage.torrent;
+      if (!torrent) {
+        return;
+      }
+      const selected = normalizePath(els.manageSelectedLocation.value);
+      const custom = normalizePath(els.manageCustomLocation.value);
+      const location = custom || selected;
+      if (!location) {
+        setStatus(els.manageStatus, 'Choose a destination folder first.', 'error');
+        return;
+      }
+      els.moveTorrentButton.disabled = true;
+      setStatus(els.manageStatus, `Moving torrent to ${location} ...`);
+      try {
+        await api('/api/v2/torrents/setLocation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            hashes: torrent.hash,
+            location
+          }).toString()
+        });
+        setStatus(els.manageStatus, `Move request sent to ${location}.`, 'ok');
+        requestBackgroundGcsSync({ immediate: true });
+        await syncTorrents({ silent: true });
+        await loadTorrentFiles(torrent.hash, { preserveStatus: true });
+      } catch (error) {
+        setStatus(els.manageStatus, `Move failed.\n${error.message}`, 'error');
+      } finally {
+        els.moveTorrentButton.disabled = false;
+      }
+    }
+
+    async function createFolderInBrowser() {
+      const basePath = normalizePath(state.manage.browserPath) || '/downloads';
+      const folderName = String(els.manageNewFolderName.value || '').trim().replaceAll('/', '');
+      if (!folderName) {
+        setStatus(els.manageStatus, 'Enter a folder name first.', 'error');
+        return;
+      }
+      const targetPath = joinPath(basePath, folderName);
+      els.createFolderButton.disabled = true;
+      setStatus(els.manageStatus, `Creating ${targetPath} ...`);
+      try {
+        await api(encodeDownloadsPath(targetPath), {
+          method: 'MKCOL'
+        });
+        els.manageNewFolderName.value = '';
+        els.manageSelectedLocation.value = targetPath;
+        els.manageCustomLocation.value = targetPath;
+        setStatus(els.manageStatus, `Created ${targetPath}.`, 'ok');
+        await loadBrowserPath(targetPath);
+      } catch (error) {
+        setStatus(els.manageStatus, `Create folder failed.\n${error.message}`, 'error');
+      } finally {
+        els.createFolderButton.disabled = false;
+      }
+    }
+
+    async function renameManagedEntry(kind, oldPath, newBaseName) {
+      const torrent = state.manage.torrent;
+      if (!torrent) {
+        return;
+      }
+      const trimmedName = String(newBaseName || '').trim();
+      if (!trimmedName) {
+        setStatus(els.manageStatus, 'New name cannot be empty.', 'error');
+        return;
+      }
+      const newPath = joinPath(dirname(oldPath), trimmedName);
+      if (newPath === oldPath) {
+        setStatus(els.manageStatus, 'Name is unchanged.', 'error');
+        return;
+      }
+      setStatus(els.manageStatus, `Renaming ${kind}...`);
+      try {
+        await api(`/api/v2/torrents/${kind === 'folder' ? 'renameFolder' : 'renameFile'}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            hash: torrent.hash,
+            oldPath,
+            newPath
+          }).toString()
+        });
+        setStatus(els.manageStatus, `${kind === 'folder' ? 'Folder' : 'File'} renamed on disk.`, 'ok');
+        requestBackgroundGcsSync({ immediate: true });
+        await syncTorrents({ silent: true });
+        await loadTorrentFiles(torrent.hash, { preserveStatus: true });
+      } catch (error) {
+        setStatus(els.manageStatus, `Rename failed.\n${error.message}`, 'error');
+      }
+    }
+
+    async function addMagnets() {
+      const lines = els.magnetInput.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (!lines.length) {
+        setStatus(els.actionStatus, 'Paste at least one magnet link.', 'error');
+        return;
+      }
+      state.add.mode = 'magnet';
+      state.add.currentIndex = 0;
+      state.add.magnets = lines.map((url, index) => {
+        const originalName = parseMagnetName(url, index);
+        return {
+          url,
+          originalName,
+          desiredName: originalName,
+          savePath: '',
+          category: '',
+          useDesiredNameForParent: true,
+          infoHash: parseMagnetInfoHash(url)
+        };
+      });
+      state.add.selectedLocation = '/downloads';
+      state.add.selectedCategory = '';
+      state.add.useDesiredNameForParent = true;
+      els.addSelectedLocation.value = '/downloads';
+      els.addCustomLocation.value = '/downloads';
+      els.addCategoryInput.value = '';
+      setStatus(els.actionStatus, `Prepared ${lines.length} magnet link(s). Choose destination, category, and names.`, 'ok');
+      await loadAddBrowserPath('/downloads');
+    }
+
+    async function uploadTorrents() {
+      const files = Array.from(els.torrentFiles.files || []);
+      if (!files.length) {
+        setStatus(els.actionStatus, 'Choose at least one .torrent file first.', 'error');
+        return;
+      }
+
+      setStatus(els.actionStatus, `Reading ${files.length} torrent file(s)...`);
+      const uploads = await Promise.all(files.map(async (file) => {
+        const fallbackName = stripTorrentExtension(file.name);
+        const entry = {
+          file,
+          sourceFileName: file.name,
+          originalName: fallbackName,
+          desiredName: fallbackName,
+          savePath: '',
+          category: '',
+          useDesiredNameForParent: true,
+          metadata: null,
+          infoHash: '',
+          folderRenames: [],
+          fileRenames: [],
+          parseError: ''
+        };
+        try {
+          const metadata = await parseTorrentUploadMetadata(file);
+          entry.metadata = metadata;
+          entry.infoHash = metadata.infoHash;
+          entry.originalName = metadata.topLevelOriginalName || fallbackName;
+          entry.desiredName = entry.originalName;
+          entry.folderRenames = metadata.folders
+            .filter((folderPath) => folderPath !== metadata.topLevelOriginalName)
+            .map((folderPath) => ({
+              originalPath: folderPath,
+              desiredBaseName: basename(folderPath)
+            }));
+          entry.fileRenames = metadata.files.map((item) => ({
+            originalPath: item.originalPath,
+            desiredBaseName: basename(item.originalPath),
+            size: item.size,
+            isGeneratedPlaceholder: Boolean(item.isGeneratedPlaceholder)
+          }));
+        } catch (error) {
+          entry.parseError = String(error?.message || error || 'Torrent metadata could not be read.');
+        }
+        return entry;
+      }));
+
+      state.add.mode = 'upload';
+      state.add.currentIndex = 0;
+      state.add.uploads = uploads;
+      state.add.selectedLocation = '/downloads';
+      state.add.selectedCategory = '';
+      state.add.useDesiredNameForParent = true;
+      els.addSelectedLocation.value = '/downloads';
+      els.addCustomLocation.value = '/downloads';
+      els.addCategoryInput.value = '';
+      setStatus(els.actionStatus, `Prepared ${files.length} torrent file(s). Choose destination and category for torrent 1 of ${files.length}.`, 'ok');
+      await loadAddBrowserPath('/downloads');
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => {
+        window.setTimeout(resolve, ms);
+      });
+    }
+
+    async function waitForUploadedTorrentFiles(hash, attempts = 30, delayMs = 500) {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+        const files = await response.json();
+        if (Array.isArray(files) && files.length) {
+          return files;
+        }
+        await sleep(delayMs);
+      }
+      throw new Error(`Torrent ${hash} did not expose files in time.`);
+    }
+
+    function parseMagnetInfoHash(url) {
+      try {
+        const parsed = new URL(url);
+        const xt = String(parsed.searchParams.get('xt') || '').trim();
+        const match = xt.match(/^urn:btih:([A-Za-z0-9]+)$/i);
+        if (!match) {
+          return '';
+        }
+        const rawHash = match[1].trim();
+        if (/^[a-f0-9]{40}$/i.test(rawHash)) {
+          return rawHash.toLowerCase();
+        }
+        if (!/^[A-Z2-7]{32}$/i.test(rawHash)) {
+          return '';
+        }
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+        let bits = '';
+        rawHash.toUpperCase().split('').forEach((char) => {
+          const value = alphabet.indexOf(char);
+          if (value >= 0) {
+            bits += value.toString(2).padStart(5, '0');
+          }
+        });
+        const bytes = [];
+        for (let index = 0; index + 8 <= bits.length; index += 8) {
+          bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+        }
+        return bytes.map((value) => value.toString(16).padStart(2, '0')).join('').slice(0, 40);
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function getDesiredParentName(entry, fallbackName = '') {
+      if (!entry?.useDesiredNameForParent) {
+        return '';
+      }
+      return sanitizePathSegment(
+        entry.desiredName,
+        fallbackName || entry?.metadata?.topLevelOriginalName || entry?.originalName || ''
+      );
+    }
+
+    function shouldSendAddRename(entry) {
+      if (!entry) {
+        return false;
+      }
+      const desiredName = String(entry.desiredName || '').trim();
+      if (!desiredName) {
+        return false;
+      }
+      // qB can leave one-file multi-file torrents as "File 1" when the add request
+      // itself includes rename. Let the post-add rename pass handle those instead.
+      return !Boolean(entry.metadata?.isMultiFile);
+    }
+
+    async function renameAddedTorrentParent(entry, currentFiles) {
+      const desiredParentName = getDesiredParentName(entry);
+      if (!desiredParentName || !Array.isArray(currentFiles) || !currentFiles.length) {
+        return currentFiles;
+      }
+      const firstPath = String(currentFiles[0]?.name || '').trim();
+      if (!firstPath) {
+        return currentFiles;
+      }
+      if (firstPath.includes('/')) {
+        const currentTopLevelName = firstPath.split('/').filter(Boolean)[0] || '';
+        if (currentTopLevelName && currentTopLevelName !== desiredParentName) {
+          await api('/api/v2/torrents/renameFolder', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+            },
+            body: new URLSearchParams({
+              hash: entry.infoHash,
+              oldPath: currentTopLevelName,
+              newPath: desiredParentName
+            }).toString()
+          });
+          return waitForUploadedTorrentFiles(entry.infoHash, 20, 400);
+        }
+        return currentFiles;
+      }
+      const currentLeafName = basename(firstPath);
+      if (currentLeafName !== desiredParentName) {
+        await api('/api/v2/torrents/renameFile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            hash: entry.infoHash,
+            oldPath: firstPath,
+            newPath: joinPath(dirname(firstPath), desiredParentName)
+          }).toString()
+        });
+        return waitForUploadedTorrentFiles(entry.infoHash, 20, 400);
+      }
+      return currentFiles;
+    }
+
+    async function renameUploadedTorrentContents(entry) {
+      if (!entry?.metadata || !entry.infoHash) {
+        return;
+      }
+      const hash = entry.infoHash;
+      let currentFiles = await waitForUploadedTorrentFiles(hash);
+      currentFiles = await renameAddedTorrentParent(entry, currentFiles);
+      const desiredTopLevelName = getDesiredParentName(entry, entry.metadata.topLevelOriginalName || entry.originalName);
+
+      for (let index = 0; index < entry.fileRenames.length; index += 1) {
+        const renamePlan = entry.fileRenames[index];
+        const currentFile = currentFiles[index];
+        if (!currentFile?.name) {
+          continue;
+        }
+        const isTopLevelSingleFile = !entry.metadata.isMultiFile && index === 0;
+        const desiredLeafName = sanitizePathSegment(
+          isTopLevelSingleFile && entry.useDesiredNameForParent
+            ? desiredTopLevelName
+            : renamePlan.desiredBaseName,
+          basename(renamePlan.originalPath)
+        );
+        const currentLeafName = basename(currentFile.name);
+        if (!desiredLeafName || desiredLeafName === currentLeafName) {
+          continue;
+        }
+        await api('/api/v2/torrents/renameFile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            hash,
+            oldPath: currentFile.name,
+            newPath: joinPath(dirname(currentFile.name), desiredLeafName)
+          }).toString()
+        });
+      }
+
+      currentFiles = await waitForUploadedTorrentFiles(hash, 20, 400);
+      const currentTopLevelName = detectCurrentTopLevelName(currentFiles, entry);
+      const folderOperations = [];
+      for (const folderPlan of entry.folderRenames) {
+        const oldPath = replaceLeadingPathSegment(folderPlan.originalPath, entry.metadata.topLevelOriginalName, currentTopLevelName);
+        const newPath = buildDesiredFolderPath(folderPlan.originalPath, entry, desiredTopLevelName);
+        if (oldPath && newPath && oldPath !== newPath) {
+          folderOperations.push({ oldPath, newPath });
+        }
+      }
+      if (entry.metadata.isMultiFile && entry.useDesiredNameForParent && currentTopLevelName && desiredTopLevelName && currentTopLevelName !== desiredTopLevelName) {
+        folderOperations.push({
+          oldPath: currentTopLevelName,
+          newPath: desiredTopLevelName
+        });
+      }
+
+      const orderedFolderOperations = folderOperations
+        .sort((left, right) => right.oldPath.split('/').length - left.oldPath.split('/').length)
+        .filter((operation, index, list) => list.findIndex((item) => item.oldPath === operation.oldPath && item.newPath === operation.newPath) === index);
+
+      for (const operation of orderedFolderOperations) {
+        await api('/api/v2/torrents/renameFolder', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            hash,
+            oldPath: operation.oldPath,
+            newPath: operation.newPath
+          }).toString()
+        });
+      }
+
+      currentFiles = await waitForUploadedTorrentFiles(hash, 20, 400);
+      if (entry.metadata.isMultiFile && entry.fileRenames.length === 1 && currentFiles.length === 1) {
+        const currentPath = String(currentFiles[0]?.name || '').trim();
+        const currentLeafName = basename(currentPath);
+        const desiredLeafName = sanitizePathSegment(
+          entry.fileRenames[0]?.desiredBaseName,
+          basename(entry.fileRenames[0]?.originalPath || currentPath)
+        );
+        if (currentPath && desiredLeafName && isGeneratedFilePlaceholder(currentLeafName) && currentLeafName !== desiredLeafName) {
+          await api('/api/v2/torrents/renameFile', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+            },
+            body: new URLSearchParams({
+              hash,
+              oldPath: currentPath,
+              newPath: joinPath(dirname(currentPath), desiredLeafName)
+            }).toString()
+          });
+        }
+      }
+    }
+
+    async function renameMagnetTorrentContents(entry) {
+      if (!entry?.infoHash || !entry?.useDesiredNameForParent) {
+        return;
+      }
+      const currentFiles = await waitForUploadedTorrentFiles(entry.infoHash);
+      await renameAddedTorrentParent(entry, currentFiles);
+    }
+
+    async function postAction(path, payload, successMessage, options = {}) {
+      const { optimistic } = options;
+      setStatus(els.actionStatus, 'Sending action...');
+      try {
+        await api(path, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams(payload).toString()
+        });
+        if (typeof optimistic === 'function') {
+          optimistic();
+        }
+        setStatus(els.actionStatus, successMessage, 'ok');
+        requestBackgroundGcsSync({ immediate: true });
+        window.setTimeout(() => {
+          syncTorrents({ silent: true }).catch(() => {});
+        }, 600);
+      } catch (error) {
+        setStatus(els.actionStatus, `Action failed.\n${error.message}`, 'error');
+      }
+    }
+
+    window.torrentActions = {
+      pause(hash) {
+        return postAction('/api/v2/torrents/stop', { hashes: hash }, 'Torrent stopped.', {
+          optimistic() {
+            patchTorrent(hash, {
+              state: 'stoppedUP',
+              force_start: false,
+              upspeed: 0,
+              dlspeed: 0
+            });
+          }
+        });
+      },
+      resume(hash) {
+        return postAction('/api/v2/torrents/start', { hashes: hash }, 'Torrent started.', {
+          optimistic() {
+            const torrent = findTorrent(hash);
+            if (!torrent) {
+              return;
+            }
+            patchTorrent(hash, {
+              state: Number(torrent.progress || 0) >= 1
+                ? (torrent.force_start ? 'forcedUP' : 'uploading')
+                : 'downloading'
+            });
+          }
+        });
+      },
+      deleteKeep(hash) {
+        if (!window.confirm('Delete this torrent but keep downloaded data?')) {
+          return Promise.resolve();
+        }
+        return postAction('/api/v2/torrents/delete', { hashes: hash, deleteFiles: 'false' }, 'Torrent deleted and data kept.');
+      },
+      deleteWithData(hash) {
+        if (!window.confirm('Delete this torrent and remove downloaded data?')) {
+          return Promise.resolve();
+        }
+        return postAction('/api/v2/torrents/delete', { hashes: hash, deleteFiles: 'true' }, 'Torrent and data deleted.');
+      },
+      manage(hash) {
+        return openManageModal(hash).catch((error) => {
+          setStatus(els.actionStatus, `Failed to load torrent tools.\n${error.message}`, 'error');
+        });
+      }
+    };
+
+    async function restoreSession() {
+      try {
+        await api('/api/v2/app/version');
+        setLoggedIn(true);
+        setStatus(els.actionStatus, 'Existing session restored.', 'ok');
+        state.syncRid = 0;
+        await syncTorrents();
+        startAutoRefresh();
+      } catch (_) {
+        setLoggedIn(false);
+      }
+    }
+
+    els.loginButton.addEventListener('click', login);
+    els.password.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        login();
+      }
+    });
+    els.refreshButton.addEventListener('click', () => {
+      state.syncRid = 0;
+      syncTorrents().catch((error) => {
+        setStatus(els.actionStatus, `Refresh failed.\n${error.message}`, 'error');
+      });
+    });
+    els.logoutButton.addEventListener('click', logout);
+    els.syncSaveButton?.addEventListener('click', saveGcsSyncConfig);
+    els.syncNowButton?.addEventListener('click', triggerGcsSyncNow);
+    els.syncDisableButton?.addEventListener('click', disableGcsSync);
+    els.addMagnetButton.addEventListener('click', addMagnets);
+    els.uploadButton.addEventListener('click', uploadTorrents);
+    els.filterState.addEventListener('change', renderTable);
+    els.categoryFilter.addEventListener('change', renderTable);
+    els.searchInput.addEventListener('input', renderTable);
+    els.showInactiveToggle.addEventListener('change', () => {
+      state.showInactive = Boolean(els.showInactiveToggle.checked);
+      renderTable();
+    });
+    els.torrentTable.addEventListener('mouseover', (event) => {
+      const pill = event.target.closest('[data-peer-tooltip="true"]');
+      if (!pill) {
+        return;
+      }
+      const related = event.relatedTarget;
+      if (related && pill.contains(related)) {
+        return;
+      }
+      const hash = pill.getAttribute('data-torrent-hash') || '';
+      const leecherCount = Number(pill.getAttribute('data-leecher-count') || '0');
+      if (!hash || !leecherCount) {
+        return;
+      }
+      openLeecherTooltip(pill, hash, leecherCount, event).catch(() => {});
+    });
+    els.torrentTable.addEventListener('mousemove', (event) => {
+      const pill = event.target.closest('[data-peer-tooltip="true"]');
+      if (!pill || state.peerTooltip.anchor !== pill) {
+        return;
+      }
+      state.peerTooltip.lastEvent = event;
+      positionPeerTooltip(pill, event);
+    });
+    els.torrentTable.addEventListener('mouseout', (event) => {
+      const pill = event.target.closest('[data-peer-tooltip="true"]');
+      if (!pill) {
+        return;
+      }
+      const related = event.relatedTarget;
+      if (related && pill.contains(related)) {
+        return;
+      }
+      scheduleHidePeerTooltip();
+    });
+    els.manageCloseButton.addEventListener('click', closeManageModal);
+    els.addMagnetCloseButton.addEventListener('click', closeAddMagnetModal);
+    els.cancelMagnetButton.addEventListener('click', closeAddMagnetModal);
+    els.modalRefreshButton.addEventListener('click', () => {
+      if (state.manage.torrent) {
+        loadTorrentFiles(state.manage.torrent.hash).catch((error) => {
+          setStatus(els.manageStatus, `Reload failed.\n${error.message}`, 'error');
+        });
+      }
+    });
+    els.moveTorrentButton.addEventListener('click', moveManagedTorrent);
+    els.pickerUpButton.addEventListener('click', () => {
+      const parent = dirname(state.manage.browserPath) || '/downloads';
+      loadBrowserPath(parent).catch((error) => {
+        setStatus(els.manageStatus, `Folder load failed.\n${error.message}`, 'error');
+      });
+    });
+    els.pickerSelectCurrentButton.addEventListener('click', () => {
+      const current = normalizePath(state.manage.browserPath) || '/downloads';
+      els.manageSelectedLocation.value = current;
+      els.manageCustomLocation.value = current;
+      renderBrowser();
+    });
+    els.createFolderButton.addEventListener('click', createFolderInBrowser);
+    els.manageNewFolderName.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        createFolderInBrowser();
+      }
+    });
+    els.manageCustomLocation.addEventListener('input', () => {
+      els.manageSelectedLocation.value = normalizePath(els.manageCustomLocation.value);
+    });
+    els.addCustomLocation.addEventListener('input', () => {
+      state.add.selectedLocation = normalizePath(els.addCustomLocation.value) || '/downloads';
+      els.addSelectedLocation.value = state.add.selectedLocation;
+      renderAddBrowser();
+    });
+    els.addCategoryInput.addEventListener('input', () => {
+      state.add.selectedCategory = String(els.addCategoryInput.value || '').trim();
+    });
+    els.manageModal.addEventListener('click', (event) => {
+      if (event.target === els.manageModal) {
+        closeManageModal();
+      }
+    });
+    els.addMagnetModal.addEventListener('click', (event) => {
+      if (event.target === els.addMagnetModal) {
+        closeAddMagnetModal();
+      }
+    });
+    els.pickerBreadcrumbs.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-path]');
+      if (!button) {
+        return;
+      }
+      loadBrowserPath(button.getAttribute('data-path') || '/downloads').catch((error) => {
+        setStatus(els.manageStatus, `Folder load failed.\n${error.message}`, 'error');
+      });
+    });
+    els.pickerList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-path]');
+      if (!button) {
+        return;
+      }
+      const path = button.getAttribute('data-path') || '/downloads';
+      els.manageSelectedLocation.value = normalizePath(path);
+      els.manageCustomLocation.value = normalizePath(path);
+      loadBrowserPath(path).catch((error) => {
+        setStatus(els.manageStatus, `Folder load failed.\n${error.message}`, 'error');
+      });
+    });
+    els.addPickerBreadcrumbs.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-path]');
+      if (!button) {
+        return;
+      }
+      loadAddBrowserPath(button.getAttribute('data-path') || '/downloads').catch((error) => {
+        setStatus(els.addMagnetStatus, `Folder load failed.\n${error.message}`, 'error');
+      });
+    });
+    els.manageModal.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action="rename-entry"]');
+      if (!button) {
+        return;
+      }
+      const oldPath = button.getAttribute('data-entry-old-path') || '';
+      const kind = button.getAttribute('data-entry-kind') || 'file';
+      const input = els.manageModal.querySelector(`input[data-entry-kind="${kind}"][data-entry-old-path="${CSS.escape(oldPath)}"]`);
+      const newName = input ? input.value : '';
+      renameManagedEntry(kind, oldPath, newName);
+    });
+    els.addPickerList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-path]');
+      if (!button) {
+        return;
+      }
+      const path = button.getAttribute('data-path') || '/downloads';
+      state.add.selectedLocation = normalizePath(path) || '/downloads';
+      els.addSelectedLocation.value = state.add.selectedLocation;
+      els.addCustomLocation.value = state.add.selectedLocation;
+      loadAddBrowserPath(path).catch((error) => {
+        setStatus(els.addMagnetStatus, `Folder load failed.\n${error.message}`, 'error');
+      });
+    });
+    els.addPickerUpButton.addEventListener('click', () => {
+      const parent = dirname(state.add.browserPath) || '/downloads';
+      loadAddBrowserPath(parent).catch((error) => {
+        setStatus(els.addMagnetStatus, `Folder load failed.\n${error.message}`, 'error');
+      });
+    });
+    els.addPickerSelectCurrentButton.addEventListener('click', () => {
+      const current = normalizePath(state.add.browserPath) || '/downloads';
+      state.add.selectedLocation = current;
+      els.addSelectedLocation.value = current;
+      els.addCustomLocation.value = current;
+      renderAddBrowser();
+    });
+    els.addCreateFolderButton.addEventListener('click', createFolderInAddBrowser);
+    els.addNewFolderName.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        createFolderInAddBrowser();
+      }
+    });
+    els.addMagnetRows.addEventListener('input', (event) => {
+      if (event.target && event.target.id === 'addUseDesiredNameForParent') {
+        state.add.useDesiredNameForParent = Boolean(event.target.checked);
+        return;
+      }
+      const magnetInput = event.target.closest('[data-add-magnet-index]');
+      if (magnetInput) {
+        const index = Number(magnetInput.getAttribute('data-add-magnet-index'));
+        if (!Number.isInteger(index) || !state.add.magnets[index]) {
+          return;
+        }
+        state.add.magnets[index].desiredName = magnetInput.value;
+        return;
+      }
+      const uploadInput = event.target.closest('[data-add-upload-index]');
+      if (!uploadInput) {
+        return;
+      }
+      const index = Number(uploadInput.getAttribute('data-add-upload-index'));
+      if (!Number.isInteger(index) || !state.add.uploads[index]) {
+        return;
+      }
+      state.add.uploads[index].desiredName = uploadInput.value;
+      return;
+    });
+    els.addMagnetRows.addEventListener('input', (event) => {
+      const folderInput = event.target.closest('[data-add-upload-folder-index]');
+      if (folderInput) {
+        const index = Number(folderInput.getAttribute('data-add-upload-folder-index'));
+        const originalPath = folderInput.getAttribute('data-add-upload-folder-path') || '';
+        const entry = Number.isInteger(index) ? state.add.uploads[index] : null;
+        const renamePlan = entry?.folderRenames?.find((item) => item.originalPath === originalPath);
+        if (renamePlan) {
+          renamePlan.desiredBaseName = folderInput.value;
+        }
+        return;
+      }
+      const fileInput = event.target.closest('[data-add-upload-file-index]');
+      if (!fileInput) {
+        return;
+      }
+      const index = Number(fileInput.getAttribute('data-add-upload-file-index'));
+      const originalPath = fileInput.getAttribute('data-add-upload-file-path') || '';
+      const entry = Number.isInteger(index) ? state.add.uploads[index] : null;
+      const renamePlan = entry?.fileRenames?.find((item) => item.originalPath === originalPath);
+      if (renamePlan) {
+        renamePlan.desiredBaseName = fileInput.value;
+      }
+    });
+    els.addMagnetRows.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action="reset-magnet-name"]');
+      if (button) {
+        const index = Number(button.getAttribute('data-add-magnet-index'));
+        if (!Number.isInteger(index) || !state.add.magnets[index]) {
+          return;
+        }
+        state.add.magnets[index].desiredName = state.add.magnets[index].originalName;
+        renderAddMagnetRows();
+        return;
+      }
+      const uploadButton = event.target.closest('[data-action="reset-upload-name"]');
+      if (!uploadButton) {
+        return;
+      }
+      const index = Number(uploadButton.getAttribute('data-add-upload-index'));
+      if (!Number.isInteger(index) || !state.add.uploads[index]) {
+        return;
+      }
+      state.add.uploads[index].desiredName = state.add.uploads[index].originalName;
+      renderAddMagnetRows();
+      return;
+    });
+    els.addMagnetRows.addEventListener('click', (event) => {
+      const folderReset = event.target.closest('[data-action="reset-upload-folder-name"]');
+      if (folderReset) {
+        const index = Number(folderReset.getAttribute('data-add-upload-folder-index'));
+        const originalPath = folderReset.getAttribute('data-add-upload-folder-path') || '';
+        const entry = Number.isInteger(index) ? state.add.uploads[index] : null;
+        const renamePlan = entry?.folderRenames?.find((item) => item.originalPath === originalPath);
+        if (renamePlan) {
+          renamePlan.desiredBaseName = basename(originalPath);
+          renderAddMagnetRows();
+        }
+        return;
+      }
+      const fileReset = event.target.closest('[data-action="reset-upload-file-name"]');
+      if (!fileReset) {
+        return;
+      }
+      const index = Number(fileReset.getAttribute('data-add-upload-file-index'));
+      const originalPath = fileReset.getAttribute('data-add-upload-file-path') || '';
+      const entry = Number.isInteger(index) ? state.add.uploads[index] : null;
+      const renamePlan = entry?.fileRenames?.find((item) => item.originalPath === originalPath);
+      if (renamePlan) {
+        renamePlan.desiredBaseName = basename(originalPath);
+        renderAddMagnetRows();
+      }
+    });
+    els.submitMagnetButton.addEventListener('click', submitPreparedMagnets);
+    window.addEventListener('scroll', () => {
+      if (state.peerTooltip.anchor) {
+        positionPeerTooltip(state.peerTooltip.anchor);
+      }
+    }, { passive: true });
+    window.addEventListener('resize', () => {
+      if (state.peerTooltip.anchor) {
+        positionPeerTooltip(state.peerTooltip.anchor);
+      }
+    });
+
+    loadGcsSyncStatus().catch(() => {});
+    scheduleGcsSyncPolling(1000);
+
+    restoreSession();
+  </script>
+</body>
+</html>
