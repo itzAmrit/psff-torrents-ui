@@ -1421,7 +1421,8 @@
         lastRunKey: '',
         queuedRunTimer: null
       },
-      pendingRenameInFlight: false
+      pendingRenameInFlight: false,
+      pendingRenameLastMessage: ''
     };
 
     const els = {
@@ -1526,6 +1527,12 @@
       }
       target.textContent = message;
       target.className = `status-box${kind ? ` ${kind}` : ''}`;
+    }
+
+    function reportPendingRename(message, kind = '') {
+      state.pendingRenameLastMessage = message;
+      console.info('[torrent-rename]', message);
+      setStatus(els.actionStatus, message, kind);
     }
 
     function setLoggedIn(loggedIn) {
@@ -3957,7 +3964,11 @@
       state.pendingRenameInFlight = true;
       try {
         for (const hash of hashes) {
-          await applyPendingRenamePlan(hash, pending[hash]);
+          try {
+            await applyPendingRenamePlan(hash, pending[hash]);
+          } catch (error) {
+            reportPendingRename(`Queued rename failed for ${hash}.\n${error.message}`, 'error');
+          }
         }
       } finally {
         state.pendingRenameInFlight = false;
@@ -3967,16 +3978,19 @@
     async function applyPendingRenamePlan(hash, plan) {
       const torrent = findTorrent(hash);
       if (!torrent || !plan) {
+        reportPendingRename(`Queued rename waiting for torrent ${hash} to appear.`);
         return;
       }
       let files = [];
       try {
         const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
         files = await response.json();
-      } catch (_) {
+      } catch (error) {
+        reportPendingRename(`Queued rename could not read files for ${hash}.\n${error.message}`, 'error');
         return;
       }
       if (!Array.isArray(files) || !files.length) {
+        reportPendingRename(`Queued rename waiting for files for ${hash}.`);
         return;
       }
       const expectedLeafNames = Array.isArray(plan.expectedLeafNames) ? plan.expectedLeafNames.filter(Boolean) : [];
@@ -3997,6 +4011,7 @@
         await renameAddedTorrentParent(entry, files);
       }
       clearPendingRenamePlan(hash);
+      reportPendingRename(`Queued rename applied for ${entry.desiredName || hash}.`, 'ok');
     }
 
     async function applyUploadedMetadataPaths(hash, entry, files, expectedLeafNames) {
@@ -4017,6 +4032,7 @@
         if (currentPath === desiredPath) {
           continue;
         }
+        reportPendingRename(`Renaming file ${currentPath} -> ${desiredPath}`);
         await api('/api/v2/torrents/renameFile', {
           method: 'POST',
           headers: {
