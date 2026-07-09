@@ -3743,10 +3743,42 @@
       }
       await renameTorrentDisplayName(entry);
       if (!shouldRenameInternalParent(entry)) {
+        await restoreUploadedOriginalFileNames(entry);
         return;
       }
       const currentFiles = await waitForUploadedTorrentFiles(entry.infoHash);
       await renameAddedTorrentParent(entry, currentFiles);
+      await restoreUploadedOriginalFileNames(entry);
+    }
+
+    async function restoreUploadedOriginalFileNames(entry) {
+      if (!entry?.metadata?.files?.length || !entry?.infoHash) {
+        return;
+      }
+      const currentFiles = await waitForUploadedTorrentFiles(entry.infoHash, 20, 400);
+      const limit = Math.min(currentFiles.length, entry.metadata.files.length);
+      for (let index = 0; index < limit; index += 1) {
+        const currentPath = String(currentFiles[index]?.name || '').trim();
+        if (!currentPath) {
+          continue;
+        }
+        const desiredLeafName = basename(entry.metadata.files[index]?.originalPath || currentPath);
+        const desiredPath = joinPath(dirname(currentPath), desiredLeafName);
+        if (!desiredLeafName || currentPath === desiredPath) {
+          continue;
+        }
+        await api('/api/v2/torrents/renameFile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            hash: entry.infoHash,
+            oldPath: currentPath,
+            newPath: desiredPath
+          }).toString()
+        });
+      }
     }
 
     async function renameAddedTorrentParent(entry, currentFiles) {
