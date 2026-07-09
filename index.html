@@ -2894,6 +2894,31 @@
       return node.value.map((child) => sanitizePathSegment(torrentString(child))).filter(Boolean);
     }
 
+    function extractFileTreeEntries(node, parentSegments = []) {
+      if (!node || node.type !== 'dict') {
+        return [];
+      }
+      const entries = [];
+      Object.entries(node.value).forEach(([key, child]) => {
+        if (key === '') {
+          if (child?.type === 'dict') {
+            const lengthNode = child.value.length;
+            entries.push({
+              pathSegments: parentSegments,
+              size: Number(lengthNode?.value || 0)
+            });
+          }
+          return;
+        }
+        const segment = sanitizePathSegment(key);
+        if (!segment) {
+          return;
+        }
+        entries.push(...extractFileTreeEntries(child, [...parentSegments, segment]));
+      });
+      return entries;
+    }
+
     function replaceLeadingPathSegment(path, fromSegment, toSegment) {
       const normalizedPath = String(path || '').trim();
       if (!normalizedPath || !fromSegment || fromSegment === toSegment) {
@@ -2956,8 +2981,11 @@
         stripTorrentExtension(file.name)
       );
       const fileNodes = info.files?.type === 'list' ? info.files.value : null;
-      const isMultiFile = Array.isArray(fileNodes);
-      const files = isMultiFile
+      const fileTreeEntries = extractFileTreeEntries(info['file tree']);
+      const hasClassicMultiFile = Array.isArray(fileNodes);
+      const hasFileTreeMultiFile = fileTreeEntries.length > 0;
+      const isMultiFile = hasClassicMultiFile || hasFileTreeMultiFile;
+      const files = hasClassicMultiFile
         ? fileNodes.map((node, index) => {
             const dict = node?.type === 'dict' ? node.value : {};
             const pathSegments = torrentListStrings(dict['path.utf-8']) || torrentListStrings(dict.path);
@@ -2968,6 +2996,15 @@
               isGeneratedPlaceholder: !pathSegments.length && isGeneratedFilePlaceholder(leafPath)
             };
           })
+        : hasFileTreeMultiFile
+          ? fileTreeEntries.map((entry, index) => {
+              const leafPath = entry.pathSegments.length ? entry.pathSegments.join('/') : `File ${index + 1}`;
+              return {
+                originalPath: joinPath(topLevelOriginalName, leafPath),
+                size: entry.size,
+                isGeneratedPlaceholder: !entry.pathSegments.length && isGeneratedFilePlaceholder(leafPath)
+              };
+            })
         : [{
           originalPath: topLevelOriginalName,
           size: Number(info.length?.value || 0),
