@@ -2919,6 +2919,33 @@
       return entries;
     }
 
+    function countGeneratedPlaceholders(files) {
+      return files.reduce((total, item) => total + (item?.isGeneratedPlaceholder ? 1 : 0), 0);
+    }
+
+    function getDesiredUploadedFileLeafName(entry, renamePlan, currentFile, desiredTopLevelName, index) {
+      const originalLeafName = basename(renamePlan?.originalPath || currentFile?.name || '');
+      const plannedLeafName = sanitizePathSegment(renamePlan?.desiredBaseName, originalLeafName);
+      const placeholderPlanned = isGeneratedFilePlaceholder(plannedLeafName);
+      const singlePlaceholderMultiFile = Boolean(
+        entry?.metadata?.isMultiFile
+        && entry?.useDesiredNameForParent
+        && entry?.fileRenames?.length === 1
+        && index === 0
+        && placeholderPlanned
+      );
+      if (singlePlaceholderMultiFile) {
+        return sanitizePathSegment(desiredTopLevelName, plannedLeafName || originalLeafName);
+      }
+      const isTopLevelSingleFile = !entry?.metadata?.isMultiFile && index === 0;
+      return sanitizePathSegment(
+        isTopLevelSingleFile && entry?.useDesiredNameForParent
+          ? desiredTopLevelName
+          : plannedLeafName,
+        originalLeafName
+      );
+    }
+
     function replaceLeadingPathSegment(path, fromSegment, toSegment) {
       const normalizedPath = String(path || '').trim();
       if (!normalizedPath || !fromSegment || fromSegment === toSegment) {
@@ -2981,11 +3008,7 @@
         stripTorrentExtension(file.name)
       );
       const fileNodes = info.files?.type === 'list' ? info.files.value : null;
-      const fileTreeEntries = extractFileTreeEntries(info['file tree']);
-      const hasClassicMultiFile = Array.isArray(fileNodes);
-      const hasFileTreeMultiFile = fileTreeEntries.length > 0;
-      const isMultiFile = hasClassicMultiFile || hasFileTreeMultiFile;
-      const files = hasClassicMultiFile
+      const classicFiles = Array.isArray(fileNodes)
         ? fileNodes.map((node, index) => {
             const dict = node?.type === 'dict' ? node.value : {};
             const pathSegments = torrentListStrings(dict['path.utf-8']) || torrentListStrings(dict.path);
@@ -2996,20 +3019,33 @@
               isGeneratedPlaceholder: !pathSegments.length && isGeneratedFilePlaceholder(leafPath)
             };
           })
-        : hasFileTreeMultiFile
-          ? fileTreeEntries.map((entry, index) => {
-              const leafPath = entry.pathSegments.length ? entry.pathSegments.join('/') : `File ${index + 1}`;
-              return {
-                originalPath: joinPath(topLevelOriginalName, leafPath),
-                size: entry.size,
-                isGeneratedPlaceholder: !entry.pathSegments.length && isGeneratedFilePlaceholder(leafPath)
-              };
-            })
-        : [{
+        : [];
+      const fileTreeEntries = extractFileTreeEntries(info['file tree']);
+      const fileTreeFiles = fileTreeEntries.map((entry, index) => {
+        const leafPath = entry.pathSegments.length ? entry.pathSegments.join('/') : `File ${index + 1}`;
+        return {
+          originalPath: joinPath(topLevelOriginalName, leafPath),
+          size: entry.size,
+          isGeneratedPlaceholder: !entry.pathSegments.length && isGeneratedFilePlaceholder(leafPath)
+        };
+      });
+      const hasClassicMultiFile = classicFiles.length > 0;
+      const hasFileTreeMultiFile = fileTreeFiles.length > 0;
+      const isMultiFile = hasClassicMultiFile || hasFileTreeMultiFile;
+      let files = [{
           originalPath: topLevelOriginalName,
           size: Number(info.length?.value || 0),
           isGeneratedPlaceholder: false
         }];
+      if (hasClassicMultiFile && hasFileTreeMultiFile) {
+        files = countGeneratedPlaceholders(fileTreeFiles) < countGeneratedPlaceholders(classicFiles)
+          ? fileTreeFiles
+          : classicFiles;
+      } else if (hasClassicMultiFile) {
+        files = classicFiles;
+      } else if (hasFileTreeMultiFile) {
+        files = fileTreeFiles;
+      }
       const folders = buildFolderEntries(files.map((item) => ({ name: item.originalPath, size: item.size })));
 
       return {
@@ -3851,12 +3887,12 @@
         if (!currentFile?.name) {
           continue;
         }
-        const isTopLevelSingleFile = !entry.metadata.isMultiFile && index === 0;
-        const desiredLeafName = sanitizePathSegment(
-          isTopLevelSingleFile && entry.useDesiredNameForParent
-            ? desiredTopLevelName
-            : renamePlan.desiredBaseName,
-          basename(renamePlan.originalPath)
+        const desiredLeafName = getDesiredUploadedFileLeafName(
+          entry,
+          renamePlan,
+          currentFile,
+          desiredTopLevelName,
+          index
         );
         const currentLeafName = basename(currentFile.name);
         if (!desiredLeafName || desiredLeafName === currentLeafName) {
@@ -3914,9 +3950,12 @@
       if (entry.metadata.isMultiFile && entry.fileRenames.length === 1 && currentFiles.length === 1) {
         const currentPath = String(currentFiles[0]?.name || '').trim();
         const currentLeafName = basename(currentPath);
-        const desiredLeafName = sanitizePathSegment(
-          entry.fileRenames[0]?.desiredBaseName,
-          basename(entry.fileRenames[0]?.originalPath || currentPath)
+        const desiredLeafName = getDesiredUploadedFileLeafName(
+          entry,
+          entry.fileRenames[0],
+          currentFiles[0],
+          desiredTopLevelName,
+          0
         );
         if (currentPath && desiredLeafName && isGeneratedFilePlaceholder(currentLeafName) && currentLeafName !== desiredLeafName) {
           await api('/api/v2/torrents/renameFile', {
