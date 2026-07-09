@@ -3929,7 +3929,14 @@
           folderOperations.push({ oldPath, newPath });
         }
       }
-      if (entry.metadata.isMultiFile && entry.useDesiredNameForParent && currentTopLevelName && desiredTopLevelName && currentTopLevelName !== desiredTopLevelName) {
+      if (
+        entry.metadata.isMultiFile
+        && entry.useDesiredNameForParent
+        && currentTopLevelName
+        && desiredTopLevelName
+        && currentTopLevelName !== desiredTopLevelName
+        && !(entry.fileRenames.length === 1 && currentFiles.length === 1)
+      ) {
         folderOperations.push({
           oldPath: currentTopLevelName,
           newPath: desiredTopLevelName
@@ -3957,7 +3964,6 @@
       currentFiles = await waitForUploadedTorrentFiles(hash, 20, 400);
       if (entry.metadata.isMultiFile && entry.fileRenames.length === 1 && currentFiles.length === 1) {
         const currentPath = String(currentFiles[0]?.name || '').trim();
-        const currentLeafName = basename(currentPath);
         const desiredLeafName = getDesiredUploadedFileLeafName(
           entry,
           entry.fileRenames[0],
@@ -3965,7 +3971,8 @@
           desiredTopLevelName,
           0
         );
-        if (currentPath && desiredLeafName && isGeneratedFilePlaceholder(currentLeafName) && currentLeafName !== desiredLeafName) {
+        const desiredPath = joinPath(desiredTopLevelName, desiredLeafName);
+        if (currentPath && desiredLeafName && desiredPath && currentPath !== desiredPath) {
           await api('/api/v2/torrents/renameFile', {
             method: 'POST',
             headers: {
@@ -3974,7 +3981,7 @@
             body: new URLSearchParams({
               hash,
               oldPath: currentPath,
-              newPath: joinPath(dirname(currentPath), desiredLeafName)
+              newPath: desiredPath
             }).toString()
           });
         }
