@@ -1287,6 +1287,7 @@
             <div class="compact-row">
               <button id="moveTorrentButton" type="button">Move Torrent</button>
               <button id="modalRefreshButton" class="secondary" type="button">Reload Files</button>
+              <button id="repairNamesButton" class="secondary" type="button">Repair File Names</button>
             </div>
           </div>
           <div id="manageStatus" class="status-box span-12">Choose a destination or rename a folder/file below.</div>
@@ -1489,6 +1490,7 @@
       manageCustomLocation: document.getElementById('manageCustomLocation'),
       moveTorrentButton: document.getElementById('moveTorrentButton'),
       modalRefreshButton: document.getElementById('modalRefreshButton'),
+      repairNamesButton: document.getElementById('repairNamesButton'),
       manageStatus: document.getElementById('manageStatus'),
       manageFolders: document.getElementById('manageFolders'),
       manageFiles: document.getElementById('manageFiles'),
@@ -3556,6 +3558,7 @@
       els.manageSelectedLocation.value = '';
       els.pickerBreadcrumbs.innerHTML = '';
       els.pickerList.innerHTML = '';
+      els.repairNamesButton.disabled = false;
     }
 
     async function moveManagedTorrent() {
@@ -3926,6 +3929,48 @@
       return true;
     }
 
+    async function repairManagedFileNames() {
+      const torrent = state.manage.torrent;
+      if (!torrent?.hash) {
+        return;
+      }
+      const stored = getStoredUploadMetadata(torrent.hash);
+      if (!stored || !Array.isArray(stored.fileLeafNames) || !stored.fileLeafNames.length) {
+        setStatus(
+          els.manageStatus,
+          `No stored .torrent metadata for ${torrent.hash}. Re-add this torrent with the latest page loaded so the app can remember the original filenames.`,
+          'error'
+        );
+        return;
+      }
+      els.repairNamesButton.disabled = true;
+      setStatus(els.manageStatus, 'Repairing file names from stored .torrent metadata...');
+      try {
+        const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(torrent.hash)}`);
+        const files = await response.json();
+        await restoreFileLeafNames(torrent.hash, files, stored.fileLeafNames);
+        const verifyResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(torrent.hash)}`);
+        const verifiedFiles = await verifyResponse.json();
+        if (!fileLeavesMatchExpected(verifiedFiles, stored.fileLeafNames)) {
+          const currentLeaves = Array.isArray(verifiedFiles)
+            ? verifiedFiles.map((item) => basename(item?.name || '')).join(', ')
+            : 'unavailable';
+          setStatus(
+            els.manageStatus,
+            `Repair did not stick.\nExpected: ${stored.fileLeafNames.join(', ')}\nCurrent: ${currentLeaves}`,
+            'error'
+          );
+          return;
+        }
+        setStatus(els.manageStatus, 'File names repaired from stored .torrent metadata.', 'ok');
+        await loadTorrentFiles(torrent.hash, { preserveStatus: true });
+      } catch (error) {
+        setStatus(els.manageStatus, `Repair failed.\n${error.message}`, 'error');
+      } finally {
+        els.repairNamesButton.disabled = false;
+      }
+    }
+
     async function renameAddedTorrentParent(entry, currentFiles) {
       const desiredParentName = getDesiredParentName(entry);
       if (!desiredParentName || !Array.isArray(currentFiles) || !currentFiles.length) {
@@ -4233,6 +4278,7 @@
       }
     });
     els.moveTorrentButton.addEventListener('click', moveManagedTorrent);
+    els.repairNamesButton.addEventListener('click', repairManagedFileNames);
     els.pickerUpButton.addEventListener('click', () => {
       const parent = dirname(state.manage.browserPath) || '/downloads';
       loadBrowserPath(parent).catch((error) => {
