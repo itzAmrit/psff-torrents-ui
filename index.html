@@ -3512,6 +3512,12 @@
       }
       const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
       let files = await response.json();
+      const pendingPlan = getPendingRenamePlan(hash);
+      if (pendingPlan) {
+        await applyPendingRenamePlan(hash, pendingPlan);
+        const refreshed = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+        files = await refreshed.json();
+      }
       if (await repairStoredPlaceholderFiles(hash, files)) {
         const refreshed = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
         files = await refreshed.json();
@@ -3523,10 +3529,10 @@
         browserPath: normalizePath(torrent.save_path || '/downloads') || '/downloads',
         browserEntries: []
       };
-      if (!preserveStatus) {
-        setStatus(els.manageStatus, 'Ready. Rename files or move the torrent.', 'ok');
-      }
       await loadBrowserPath(state.manage.browserPath);
+      if (!preserveStatus) {
+        setStatus(els.manageStatus, state.pendingRenameLastMessage || 'Ready. Rename files or move the torrent.', state.pendingRenameLastMessage ? '' : 'ok');
+      }
     }
 
     async function openManageModal(hash) {
@@ -3904,6 +3910,19 @@
         return false;
       }
       await restoreFileLeafNames(hash, files, stored.fileLeafNames);
+      const verifyResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+      const verifiedFiles = await verifyResponse.json();
+      if (!fileLeavesMatchExpected(verifiedFiles, stored.fileLeafNames)) {
+        const currentLeaves = Array.isArray(verifiedFiles)
+          ? verifiedFiles.map((item) => basename(item?.name || '')).join(', ')
+          : 'unavailable';
+        reportPendingRename(
+          `Stored metadata repair did not stick for ${hash}.\nExpected: ${stored.fileLeafNames.join(', ')}\nCurrent: ${currentLeaves}`,
+          'error'
+        );
+      } else {
+        reportPendingRename(`Stored metadata repair applied for ${hash}.`, 'ok');
+      }
       return true;
     }
 
@@ -4009,6 +4028,18 @@
         await applyUploadedMetadataPaths(hash, entry, files, expectedLeafNames);
       } else if (shouldRenameInternalParent(entry)) {
         await renameAddedTorrentParent(entry, files);
+      }
+      const verifyResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+      const verifiedFiles = await verifyResponse.json();
+      if (expectedLeafNames.length && !fileLeavesMatchExpected(verifiedFiles, expectedLeafNames)) {
+        const currentLeaves = Array.isArray(verifiedFiles)
+          ? verifiedFiles.map((item) => basename(item?.name || '')).join(', ')
+          : 'unavailable';
+        reportPendingRename(
+          `Queued rename did not stick for ${entry.desiredName || hash}.\nExpected: ${expectedLeafNames.join(', ')}\nCurrent: ${currentLeaves}`,
+          'error'
+        );
+        return;
       }
       clearPendingRenamePlan(hash);
       reportPendingRename(`Queued rename applied for ${entry.desiredName || hash}.`, 'ok');
