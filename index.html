@@ -3695,6 +3695,37 @@
       throw new Error(`Torrent ${hash} did not expose files in time.`);
     }
 
+    function fileLeavesMatchExpected(files, expectedLeafNames) {
+      if (!Array.isArray(files) || !Array.isArray(expectedLeafNames) || !files.length || files.length !== expectedLeafNames.length) {
+        return false;
+      }
+      for (let index = 0; index < files.length; index += 1) {
+        const currentLeaf = basename(files[index]?.name || '');
+        const expectedLeaf = String(expectedLeafNames[index] || '').trim();
+        if (!currentLeaf || !expectedLeaf || currentLeaf !== expectedLeaf) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    async function waitForQbMetadataFiles(entry, attempts = 60, delayMs = 500) {
+      if (!entry?.infoHash || !Array.isArray(entry?.metadata?.files) || !entry.metadata.files.length) {
+        return waitForUploadedTorrentFiles(entry?.infoHash, attempts, delayMs);
+      }
+      const expectedLeafNames = entry.metadata.files.map((item) => basename(item.originalPath || ''));
+      let lastFiles = [];
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const files = await waitForUploadedTorrentFiles(entry.infoHash, 1, delayMs);
+        lastFiles = files;
+        if (fileLeavesMatchExpected(files, expectedLeafNames)) {
+          return files;
+        }
+        await sleep(delayMs);
+      }
+      return lastFiles.length ? lastFiles : waitForUploadedTorrentFiles(entry.infoHash, 20, delayMs);
+    }
+
     function parseMagnetInfoHash(url) {
       try {
         const parsed = new URL(url);
@@ -3782,12 +3813,13 @@
         return;
       }
       storeUploadMetadata(entry);
+      await waitForQbMetadataFiles(entry);
       await renameTorrentDisplayName(entry);
       if (!shouldRenameInternalParent(entry)) {
         await restoreUploadedOriginalFileNames(entry);
         return;
       }
-      const currentFiles = await waitForUploadedTorrentFiles(entry.infoHash);
+      const currentFiles = await waitForQbMetadataFiles(entry);
       await renameAddedTorrentParent(entry, currentFiles);
       await restoreUploadedOriginalFileNames(entry);
     }
