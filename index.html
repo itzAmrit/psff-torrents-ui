@@ -1287,7 +1287,6 @@
             <div class="compact-row">
               <button id="moveTorrentButton" type="button">Move Torrent</button>
               <button id="modalRefreshButton" class="secondary" type="button">Reload Files</button>
-              <button id="repairNamesButton" class="secondary" type="button">Repair File Names</button>
             </div>
           </div>
           <div id="manageStatus" class="status-box span-12">Choose a destination or rename a folder/file below.</div>
@@ -1378,9 +1377,6 @@
   </div>
 
   <script data-cfasync="false">
-    const UPLOAD_METADATA_STORAGE_KEY = 'tsff_torrent_upload_metadata_v1';
-    const PENDING_RENAME_STORAGE_KEY = 'tsff_torrent_pending_renames_v1';
-
     const state = {
       torrents: [],
       autoRefresh: null,
@@ -1411,8 +1407,7 @@
         browserPath: '/downloads',
         browserEntries: [],
         selectedLocation: '/downloads',
-        selectedCategory: '',
-        useDesiredNameForParent: true
+        selectedCategory: ''
       },
       gcsSync: {
         poller: null,
@@ -1421,9 +1416,7 @@
         samples: [],
         lastRunKey: '',
         queuedRunTimer: null
-      },
-      pendingRenameInFlight: false,
-      pendingRenameLastMessage: ''
+      }
     };
 
     const els = {
@@ -1490,7 +1483,6 @@
       manageCustomLocation: document.getElementById('manageCustomLocation'),
       moveTorrentButton: document.getElementById('moveTorrentButton'),
       modalRefreshButton: document.getElementById('modalRefreshButton'),
-      repairNamesButton: document.getElementById('repairNamesButton'),
       manageStatus: document.getElementById('manageStatus'),
       manageFolders: document.getElementById('manageFolders'),
       manageFiles: document.getElementById('manageFiles'),
@@ -1529,12 +1521,6 @@
       }
       target.textContent = message;
       target.className = `status-box${kind ? ` ${kind}` : ''}`;
-    }
-
-    function reportPendingRename(message, kind = '') {
-      state.pendingRenameLastMessage = message;
-      console.info('[torrent-rename]', message);
-      setStatus(els.actionStatus, message, kind);
     }
 
     function setLoggedIn(loggedIn) {
@@ -1671,93 +1657,6 @@
       }
       const lastSlash = normalized.lastIndexOf('/');
       return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
-    }
-
-    function readStoredUploadMetadataMap() {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(UPLOAD_METADATA_STORAGE_KEY) || '{}');
-        return parsed && typeof parsed === 'object' ? parsed : {};
-      } catch (_) {
-        return {};
-      }
-    }
-
-    function writeStoredUploadMetadataMap(payload) {
-      localStorage.setItem(UPLOAD_METADATA_STORAGE_KEY, JSON.stringify(payload));
-    }
-
-    function readPendingRenameMap() {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(PENDING_RENAME_STORAGE_KEY) || '{}');
-        return parsed && typeof parsed === 'object' ? parsed : {};
-      } catch (_) {
-        return {};
-      }
-    }
-
-    function writePendingRenameMap(payload) {
-      localStorage.setItem(PENDING_RENAME_STORAGE_KEY, JSON.stringify(payload));
-    }
-
-    function storeUploadMetadata(entry) {
-      if (!entry?.infoHash || !Array.isArray(entry?.metadata?.files) || !entry.metadata.files.length) {
-        return;
-      }
-      const stored = readStoredUploadMetadataMap();
-      stored[entry.infoHash] = {
-        storedAt: Date.now(),
-        fileLeafNames: entry.metadata.files.map((item) => basename(item.originalPath || ''))
-      };
-      const trimmedEntries = Object.entries(stored)
-        .sort((left, right) => Number(right[1]?.storedAt || 0) - Number(left[1]?.storedAt || 0))
-        .slice(0, 100);
-      writeStoredUploadMetadataMap(Object.fromEntries(trimmedEntries));
-    }
-
-    function getStoredUploadMetadata(hash) {
-      const stored = readStoredUploadMetadataMap();
-      const item = stored[String(hash || '').trim()];
-      return item && Array.isArray(item.fileLeafNames) ? item : null;
-    }
-
-    function storePendingRenamePlan(entry) {
-      if (!entry?.infoHash) {
-        return;
-      }
-      const pending = readPendingRenameMap();
-      const expectedLeafNames = Array.isArray(entry?.metadata?.files)
-        ? entry.metadata.files.map((item) => basename(item.originalPath || '')).filter(Boolean)
-        : [];
-      pending[entry.infoHash] = {
-        storedAt: Date.now(),
-        desiredName: String(entry.desiredName || '').trim(),
-        originalName: String(entry.originalName || '').trim(),
-        useDesiredNameForParent: Boolean(entry.useDesiredNameForParent),
-        expectedLeafNames
-      };
-      const trimmedEntries = Object.entries(pending)
-        .sort((left, right) => Number(right[1]?.storedAt || 0) - Number(left[1]?.storedAt || 0))
-        .slice(0, 100);
-      writePendingRenameMap(Object.fromEntries(trimmedEntries));
-    }
-
-    function getPendingRenamePlan(hash) {
-      const pending = readPendingRenameMap();
-      const item = pending[String(hash || '').trim()];
-      return item && typeof item === 'object' ? item : null;
-    }
-
-    function clearPendingRenamePlan(hash) {
-      const key = String(hash || '').trim();
-      if (!key) {
-        return;
-      }
-      const pending = readPendingRenameMap();
-      if (!(key in pending)) {
-        return;
-      }
-      delete pending[key];
-      writePendingRenameMap(pending);
     }
 
     function joinPath(parent, child) {
@@ -2739,7 +2638,6 @@
       }
       const response = await api('/api/v2/torrents/info?sort=added_on&reverse=true');
       state.torrents = sortTorrents(await response.json());
-      await processPendingRenamePlans();
       state.syncRid = 0;
       syncCategoryFilterOptions();
       renderTable();
@@ -2761,7 +2659,6 @@
         const response = await api(`/api/v2/sync/maindata?rid=${encodeURIComponent(state.syncRid)}`);
         const payload = await response.json();
         applyTorrentSync(payload);
-        await processPendingRenamePlans();
         syncCategoryFilterOptions();
         renderTable();
         updateRefreshStamp();
@@ -2884,226 +2781,6 @@
       return value.replace(/\.torrent$/i, '') || value;
     }
 
-    function sanitizePathSegment(value, fallback = '') {
-      const cleaned = String(value || '').trim().replaceAll('/', '').replaceAll('\\', '');
-      return cleaned || fallback;
-    }
-
-    function utf8Decode(bytes) {
-      try {
-        return new TextDecoder('utf-8').decode(bytes);
-      } catch (_) {
-        return Array.from(bytes, (value) => String.fromCharCode(value)).join('');
-      }
-    }
-
-    function readBencodeNode(bytes, startIndex = 0) {
-      const marker = bytes[startIndex];
-      if (marker === 105) {
-        let cursor = startIndex + 1;
-        while (cursor < bytes.length && bytes[cursor] !== 101) {
-          cursor += 1;
-        }
-        if (cursor >= bytes.length) {
-          throw new Error('Invalid torrent file: unterminated integer.');
-        }
-        return {
-          type: 'int',
-          value: Number.parseInt(utf8Decode(bytes.slice(startIndex + 1, cursor)), 10),
-          start: startIndex,
-          end: cursor + 1
-        };
-      }
-      if (marker === 108) {
-        const value = [];
-        let cursor = startIndex + 1;
-        while (cursor < bytes.length && bytes[cursor] !== 101) {
-          const child = readBencodeNode(bytes, cursor);
-          value.push(child);
-          cursor = child.end;
-        }
-        if (cursor >= bytes.length) {
-          throw new Error('Invalid torrent file: unterminated list.');
-        }
-        return { type: 'list', value, start: startIndex, end: cursor + 1 };
-      }
-      if (marker === 100) {
-        const value = {};
-        let cursor = startIndex + 1;
-        while (cursor < bytes.length && bytes[cursor] !== 101) {
-          const keyNode = readBencodeNode(bytes, cursor);
-          if (keyNode.type !== 'bytes') {
-            throw new Error('Invalid torrent file: dictionary key is not a string.');
-          }
-          cursor = keyNode.end;
-          const child = readBencodeNode(bytes, cursor);
-          value[keyNode.text] = child;
-          cursor = child.end;
-        }
-        if (cursor >= bytes.length) {
-          throw new Error('Invalid torrent file: unterminated dictionary.');
-        }
-        return { type: 'dict', value, start: startIndex, end: cursor + 1 };
-      }
-      if (marker >= 48 && marker <= 57) {
-        let cursor = startIndex;
-        while (cursor < bytes.length && bytes[cursor] !== 58) {
-          cursor += 1;
-        }
-        if (cursor >= bytes.length) {
-          throw new Error('Invalid torrent file: bad byte string length.');
-        }
-        const length = Number.parseInt(utf8Decode(bytes.slice(startIndex, cursor)), 10);
-        const valueStart = cursor + 1;
-        const valueEnd = valueStart + length;
-        if (!Number.isFinite(length) || valueEnd > bytes.length) {
-          throw new Error('Invalid torrent file: byte string length exceeds file.');
-        }
-        const raw = bytes.slice(valueStart, valueEnd);
-        return {
-          type: 'bytes',
-          value: raw,
-          text: utf8Decode(raw),
-          start: startIndex,
-          end: valueEnd
-        };
-      }
-      throw new Error('Invalid torrent file: unsupported bencode token.');
-    }
-
-    async function sha1Hex(bytes) {
-      const digest = await crypto.subtle.digest('SHA-1', bytes);
-      return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
-    }
-
-    function torrentString(node) {
-      if (!node) {
-        return '';
-      }
-      if (node.type === 'bytes') {
-        return node.text || '';
-      }
-      if (node.type === 'int') {
-        return String(node.value ?? '');
-      }
-      return '';
-    }
-
-    function torrentListStrings(node) {
-      if (!node || node.type !== 'list') {
-        return [];
-      }
-      return node.value.map((child) => sanitizePathSegment(torrentString(child))).filter(Boolean);
-    }
-
-    function torrentPathSegments(dict) {
-      const utf8Segments = torrentListStrings(dict?.['path.utf-8']);
-      if (utf8Segments.length) {
-        return utf8Segments;
-      }
-      return torrentListStrings(dict?.path);
-    }
-
-    function extractFileTreeEntries(node, parentSegments = []) {
-      if (!node || node.type !== 'dict') {
-        return [];
-      }
-      const entries = [];
-      Object.entries(node.value).forEach(([key, child]) => {
-        if (key === '') {
-          if (child?.type === 'dict') {
-            const lengthNode = child.value.length;
-            entries.push({
-              pathSegments: parentSegments,
-              size: Number(lengthNode?.value || 0)
-            });
-          }
-          return;
-        }
-        const segment = sanitizePathSegment(key);
-        if (!segment) {
-          return;
-        }
-        entries.push(...extractFileTreeEntries(child, [...parentSegments, segment]));
-      });
-      return entries;
-    }
-
-    function countGeneratedPlaceholders(files) {
-      return files.reduce((total, item) => total + (item?.isGeneratedPlaceholder ? 1 : 0), 0);
-    }
-
-    async function parseTorrentUploadMetadata(file) {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const root = readBencodeNode(bytes);
-      if (root.type !== 'dict') {
-        throw new Error('Torrent root is not a dictionary.');
-      }
-      const infoNode = root.value.info;
-      if (!infoNode || infoNode.type !== 'dict') {
-        throw new Error('Torrent info dictionary is missing.');
-      }
-
-      const infoHash = await sha1Hex(bytes.slice(infoNode.start, infoNode.end));
-      const info = infoNode.value;
-      const topLevelOriginalName = sanitizePathSegment(
-        torrentString(info['name.utf-8']) || torrentString(info.name),
-        stripTorrentExtension(file.name)
-      );
-      const fileNodes = info.files?.type === 'list' ? info.files.value : null;
-      const classicFiles = Array.isArray(fileNodes)
-        ? fileNodes.map((node, index) => {
-            const dict = node?.type === 'dict' ? node.value : {};
-            const pathSegments = torrentPathSegments(dict);
-            const leafPath = pathSegments.length ? pathSegments.join('/') : `File ${index + 1}`;
-            return {
-              originalPath: joinPath(topLevelOriginalName, leafPath),
-              size: Number(dict.length?.value || 0),
-              isGeneratedPlaceholder: !pathSegments.length && isGeneratedFilePlaceholder(leafPath)
-            };
-          })
-        : [];
-      const fileTreeEntries = extractFileTreeEntries(info['file tree']);
-      const fileTreeFiles = fileTreeEntries.map((entry, index) => {
-        const leafPath = entry.pathSegments.length ? entry.pathSegments.join('/') : `File ${index + 1}`;
-        return {
-          originalPath: joinPath(topLevelOriginalName, leafPath),
-          size: entry.size,
-          isGeneratedPlaceholder: !entry.pathSegments.length && isGeneratedFilePlaceholder(leafPath)
-        };
-      });
-      const hasClassicMultiFile = classicFiles.length > 0;
-      const hasFileTreeMultiFile = fileTreeFiles.length > 0;
-      const isMultiFile = hasClassicMultiFile || hasFileTreeMultiFile;
-      let files = [{
-          originalPath: topLevelOriginalName,
-          size: Number(info.length?.value || 0),
-          isGeneratedPlaceholder: false
-        }];
-      if (hasClassicMultiFile && hasFileTreeMultiFile) {
-        files = countGeneratedPlaceholders(fileTreeFiles) < countGeneratedPlaceholders(classicFiles)
-          ? fileTreeFiles
-          : classicFiles;
-      } else if (hasClassicMultiFile) {
-        files = classicFiles;
-      } else if (hasFileTreeMultiFile) {
-        files = fileTreeFiles;
-      }
-      const folders = buildFolderEntries(files.map((item) => ({ name: item.originalPath, size: item.size })));
-
-      return {
-        infoHash,
-        isMultiFile,
-        topLevelOriginalName,
-        files,
-        folders
-      };
-    }
-
-    function isGeneratedFilePlaceholder(name) {
-      return /^File \d+$/i.test(String(name || '').trim());
-    }
-
     function getPreparedAddEntries() {
       return state.add.mode === 'upload' ? state.add.uploads : state.add.magnets;
     }
@@ -3125,76 +2802,25 @@
       }
 
       if (state.add.mode === 'upload') {
-        const sameAsParentToggle = `
-          <div class="compact-row" style="margin-top:10px;">
-            <label style="display:flex; align-items:center; gap:8px; font-size:0.92rem; color:var(--muted);">
-              <input id="addUseDesiredNameForParent" type="checkbox" ${state.add.useDesiredNameForParent ? 'checked' : ''}>
-              <span>Same as Parent name</span>
-            </label>
-          </div>
-        `;
-        const parseStatus = entry.parseError
-          ? `<div class="hint">Internal rename preview unavailable for this torrent file. ${escapeHtml(entry.parseError)}</div>`
-          : (entry.metadata
-            ? `<div class="hint">Checked: rename the parent file or top-level folder to match the torrent name. Unchecked: rename only the torrent label in qBittorrent.</div>`
-            : '<div class="hint">Reading torrent metadata...</div>');
         els.addMagnetRows.innerHTML = `
           <div class="entry-row">
             <div class="entry-path">
               <strong>${escapeHtml(entry.originalName)}</strong>
-              <span>${escapeHtml(entry.sourceFileName || entry.originalName)} • top-level torrent name</span>
+              <span>${escapeHtml(entry.sourceFileName || entry.originalName)} • uploaded torrent file</span>
             </div>
-            <div class="entry-rename">
-              <input
-                type="text"
-                value="${escapeHtml(entry.desiredName)}"
-                data-add-upload-index="${state.add.currentIndex}"
-                placeholder="Top-level name to use"
-              >
-            </div>
-            <button
-              class="secondary"
-              type="button"
-              data-action="reset-upload-name"
-              data-add-upload-index="${state.add.currentIndex}"
-            >Reset</button>
           </div>
-          ${sameAsParentToggle}
-          ${parseStatus}
+          <div class="hint">Adding will not rename torrent files. Use Manage after qBittorrent adds the torrent if you want to rename files.</div>
         `;
         return;
       }
 
-      const sameAsParentToggle = `
-        <div class="compact-row" style="margin-top:10px;">
-          <label style="display:flex; align-items:center; gap:8px; font-size:0.92rem; color:var(--muted);">
-            <input id="addUseDesiredNameForParent" type="checkbox" ${state.add.useDesiredNameForParent ? 'checked' : ''}>
-            <span>Same as Parent name</span>
-          </label>
-        </div>
-      `;
       els.addMagnetRows.innerHTML = `
         <div class="entry-row">
           <div class="entry-path">
             <strong>${escapeHtml(entry.originalName)}</strong>
-            <span>Metadata not loaded yet. This is the magnet display name or fallback label.</span>
+            <span>Magnet display name or fallback label. Adding will not rename torrent files.</span>
           </div>
-          <div class="entry-rename">
-            <input
-              type="text"
-              value="${escapeHtml(entry.desiredName)}"
-              data-add-magnet-index="${state.add.currentIndex}"
-              placeholder="Top-level name to use"
-            >
-          </div>
-          <button
-            class="secondary"
-            type="button"
-            data-action="reset-magnet-name"
-            data-add-magnet-index="${state.add.currentIndex}"
-          >Reset</button>
         </div>
-        ${sameAsParentToggle}
       `;
     }
 
@@ -3239,12 +2865,12 @@
       if (state.add.mode === 'upload') {
         els.addMagnetTitle.textContent = `Choose destination for torrent ${currentNumber} of ${total}`;
         els.addMagnetMeta.textContent = currentEntry
-          ? `This upload batch uses the same picker and category flow as magnets. The last chosen folder and category become the defaults for the next torrent in this batch. Checked keeps the parent file or top-level folder in sync with the torrent name. Unchecked changes only the torrent label in qBittorrent.`
-          : 'Choose the destination and rename plan for this torrent file.';
+          ? `This upload batch uses the same picker and category flow as magnets. The last chosen folder and category become the defaults for the next torrent in this batch.`
+          : 'Choose the destination for this torrent file.';
         els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Upload These Torrents';
       } else {
         els.addMagnetTitle.textContent = `Choose destination for torrent ${currentNumber} of ${total}`;
-        els.addMagnetMeta.textContent = 'Magnets now use the same per-torrent flow as uploaded .torrent files. The last chosen folder and category become the defaults for the next magnet in this batch.';
+        els.addMagnetMeta.textContent = 'Magnets use the same per-torrent destination and category flow as uploaded .torrent files.';
         els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Add These Magnets';
       }
       els.addSelectedLocation.value = state.add.selectedLocation || '/downloads';
@@ -3328,7 +2954,6 @@
       state.add.mode = 'magnet';
       state.add.currentIndex = 0;
       state.add.selectedCategory = '';
-      state.add.useDesiredNameForParent = true;
       els.addMagnetModal.classList.add('hidden');
     }
 
@@ -3339,18 +2964,14 @@
       }
       const destination = normalizePath(els.addCustomLocation.value || state.add.selectedLocation || '/downloads');
       const category = String(els.addCategoryInput.value || state.add.selectedCategory || '').trim();
-      const useDesiredNameForParent = Boolean(document.getElementById('addUseDesiredNameForParent')?.checked);
       if (!destination) {
         setStatus(els.addMagnetStatus, 'Choose a destination first.', 'error');
         return false;
       }
       entry.savePath = destination;
       entry.category = category;
-      entry.useDesiredNameForParent = useDesiredNameForParent;
-      entry.desiredName = String(entry.desiredName || '').trim() || entry.originalName;
       state.add.selectedLocation = destination;
       state.add.selectedCategory = category;
-      state.add.useDesiredNameForParent = useDesiredNameForParent;
       const nextIndex = (state.add.currentIndex || 0) + 1;
       const entries = getPreparedAddEntries();
       if (nextIndex >= entries.length) {
@@ -3365,16 +2986,8 @@
       if (nextEntry && !String(nextEntry.category || '').trim()) {
         nextEntry.category = category;
       }
-      if (nextEntry && typeof nextEntry.useDesiredNameForParent !== 'boolean') {
-        nextEntry.useDesiredNameForParent = useDesiredNameForParent;
-      }
       state.add.selectedLocation = nextEntry?.savePath || destination;
       state.add.selectedCategory = String(nextEntry?.category || category || '').trim();
-      state.add.useDesiredNameForParent = Boolean(
-        typeof nextEntry?.useDesiredNameForParent === 'boolean'
-          ? nextEntry.useDesiredNameForParent
-          : useDesiredNameForParent
-      );
       els.addSelectedLocation.value = state.add.selectedLocation;
       els.addCustomLocation.value = state.add.selectedLocation;
       els.addCategoryInput.value = state.add.selectedCategory;
@@ -3422,8 +3035,6 @@
               method: 'POST',
               body: form
             });
-            storeUploadMetadata(entry);
-            storePendingRenamePlan(entry);
             requestBackgroundGcsSync({ immediate: true });
           }
           els.torrentFiles.value = '';
@@ -3449,7 +3060,6 @@
               },
               body: body.toString()
             });
-            storePendingRenamePlan(entry);
             requestBackgroundGcsSync({ immediate: true });
           }
           els.magnetInput.value = '';
@@ -3513,17 +3123,7 @@
         setStatus(els.manageStatus, 'Loading current files and folders...');
       }
       const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-      let files = await response.json();
-      const pendingPlan = getPendingRenamePlan(hash);
-      if (pendingPlan) {
-        await applyPendingRenamePlan(hash, pendingPlan);
-        const refreshed = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-        files = await refreshed.json();
-      }
-      if (await repairStoredPlaceholderFiles(hash, files)) {
-        const refreshed = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-        files = await refreshed.json();
-      }
+      const files = await response.json();
       state.manage = {
         torrent,
         files,
@@ -3533,7 +3133,7 @@
       };
       await loadBrowserPath(state.manage.browserPath);
       if (!preserveStatus) {
-        setStatus(els.manageStatus, state.pendingRenameLastMessage || 'Ready. Rename files or move the torrent.', state.pendingRenameLastMessage ? '' : 'ok');
+        setStatus(els.manageStatus, 'Ready. Rename files or move the torrent.', 'ok');
       }
     }
 
@@ -3558,7 +3158,6 @@
       els.manageSelectedLocation.value = '';
       els.pickerBreadcrumbs.innerHTML = '';
       els.pickerList.innerHTML = '';
-      els.repairNamesButton.disabled = false;
     }
 
     async function moveManagedTorrent() {
@@ -3673,20 +3272,16 @@
         return {
           url,
           originalName,
-          desiredName: originalName,
           savePath: '',
-          category: '',
-          useDesiredNameForParent: true,
-          infoHash: parseMagnetInfoHash(url)
+          category: ''
         };
       });
       state.add.selectedLocation = '/downloads';
       state.add.selectedCategory = '';
-      state.add.useDesiredNameForParent = true;
       els.addSelectedLocation.value = '/downloads';
       els.addCustomLocation.value = '/downloads';
       els.addCategoryInput.value = '';
-      setStatus(els.actionStatus, `Prepared ${lines.length} magnet link(s). Choose destination, category, and names.`, 'ok');
+      setStatus(els.actionStatus, `Prepared ${lines.length} magnet link(s). Choose destination and category.`, 'ok');
       await loadAddBrowserPath('/downloads');
     }
 
@@ -3697,430 +3292,27 @@
         return;
       }
 
-      setStatus(els.actionStatus, `Reading ${files.length} torrent file(s)...`);
-      const uploads = await Promise.all(files.map(async (file) => {
+      const uploads = files.map((file) => {
         const fallbackName = stripTorrentExtension(file.name);
-        const entry = {
+        return {
           file,
           sourceFileName: file.name,
           originalName: fallbackName,
-          desiredName: fallbackName,
           savePath: '',
-          category: '',
-          useDesiredNameForParent: true,
-          metadata: null,
-          infoHash: '',
-          folderRenames: [],
-          fileRenames: [],
-          parseError: ''
+          category: ''
         };
-        try {
-          const metadata = await parseTorrentUploadMetadata(file);
-          entry.metadata = metadata;
-          entry.infoHash = metadata.infoHash;
-          entry.originalName = metadata.topLevelOriginalName || fallbackName;
-          entry.desiredName = entry.originalName;
-          entry.folderRenames = metadata.folders
-            .filter((folderPath) => folderPath !== metadata.topLevelOriginalName)
-            .map((folderPath) => ({
-              originalPath: folderPath,
-              desiredBaseName: basename(folderPath)
-            }));
-          entry.fileRenames = metadata.files.map((item) => ({
-            originalPath: item.originalPath,
-            desiredBaseName: basename(item.originalPath),
-            size: item.size,
-            isGeneratedPlaceholder: Boolean(item.isGeneratedPlaceholder)
-          }));
-        } catch (error) {
-          entry.parseError = String(error?.message || error || 'Torrent metadata could not be read.');
-        }
-        return entry;
-      }));
+      });
 
       state.add.mode = 'upload';
       state.add.currentIndex = 0;
       state.add.uploads = uploads;
       state.add.selectedLocation = '/downloads';
       state.add.selectedCategory = '';
-      state.add.useDesiredNameForParent = true;
       els.addSelectedLocation.value = '/downloads';
       els.addCustomLocation.value = '/downloads';
       els.addCategoryInput.value = '';
       setStatus(els.actionStatus, `Prepared ${files.length} torrent file(s). Choose destination and category for torrent 1 of ${files.length}.`, 'ok');
       await loadAddBrowserPath('/downloads');
-    }
-
-    function sleep(ms) {
-      return new Promise((resolve) => {
-        window.setTimeout(resolve, ms);
-      });
-    }
-
-    async function waitForUploadedTorrentFiles(hash, attempts = 30, delayMs = 500) {
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-        const files = await response.json();
-        if (Array.isArray(files) && files.length) {
-          return files;
-        }
-        await sleep(delayMs);
-      }
-      throw new Error(`Torrent ${hash} did not expose files in time.`);
-    }
-
-    function fileLeavesMatchExpected(files, expectedLeafNames) {
-      if (!Array.isArray(files) || !Array.isArray(expectedLeafNames) || !files.length || files.length !== expectedLeafNames.length) {
-        return false;
-      }
-      for (let index = 0; index < files.length; index += 1) {
-        const currentLeaf = basename(files[index]?.name || '');
-        const expectedLeaf = String(expectedLeafNames[index] || '').trim();
-        if (!currentLeaf || !expectedLeaf || currentLeaf !== expectedLeaf) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    function parseMagnetInfoHash(url) {
-      try {
-        const parsed = new URL(url);
-        const xt = String(parsed.searchParams.get('xt') || '').trim();
-        const match = xt.match(/^urn:btih:([A-Za-z0-9]+)$/i);
-        if (!match) {
-          return '';
-        }
-        const rawHash = match[1].trim();
-        if (/^[a-f0-9]{40}$/i.test(rawHash)) {
-          return rawHash.toLowerCase();
-        }
-        if (!/^[A-Z2-7]{32}$/i.test(rawHash)) {
-          return '';
-        }
-        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-        let bits = '';
-        rawHash.toUpperCase().split('').forEach((char) => {
-          const value = alphabet.indexOf(char);
-          if (value >= 0) {
-            bits += value.toString(2).padStart(5, '0');
-          }
-        });
-        const bytes = [];
-        for (let index = 0; index + 8 <= bits.length; index += 8) {
-          bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
-        }
-        return bytes.map((value) => value.toString(16).padStart(2, '0')).join('').slice(0, 40);
-      } catch (_) {
-        return '';
-      }
-    }
-
-    function getDesiredParentName(entry, fallbackName = '') {
-      if (!entry?.useDesiredNameForParent) {
-        return '';
-      }
-      return sanitizePathSegment(
-        entry.desiredName,
-        fallbackName || entry?.metadata?.topLevelOriginalName || entry?.originalName || ''
-      );
-    }
-
-    async function waitForAddedTorrent(hash, attempts = 30, delayMs = 500) {
-      if (!hash) {
-        throw new Error('Torrent hash is missing.');
-      }
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        const response = await api(`/api/v2/torrents/info?hashes=${encodeURIComponent(hash)}`);
-        const torrents = await response.json();
-        if (Array.isArray(torrents) && torrents.length) {
-          return torrents[0];
-        }
-        await sleep(delayMs);
-      }
-      throw new Error(`Torrent ${hash} did not appear in time.`);
-    }
-
-    async function renameTorrentDisplayName(entry) {
-      const hash = String(entry?.infoHash || '').trim();
-      const desiredName = String(entry?.desiredName || '').trim();
-      const originalName = String(entry?.originalName || '').trim();
-      if (!hash || !desiredName || desiredName === originalName) {
-        return;
-      }
-      await waitForAddedTorrent(hash);
-      await api('/api/v2/torrents/rename', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-        },
-        body: new URLSearchParams({
-          hash,
-          name: desiredName
-        }).toString()
-      });
-    }
-
-    function shouldRenameInternalParent(entry) {
-      return Boolean(entry?.useDesiredNameForParent && String(entry?.desiredName || '').trim());
-    }
-
-    async function restoreUploadedOriginalFileNames(entry) {
-      if (!entry?.metadata?.files?.length || !entry?.infoHash) {
-        return;
-      }
-      const currentFiles = await waitForUploadedTorrentFiles(entry.infoHash, 20, 400);
-      const leafNames = entry.metadata.files.map((item) => basename(item.originalPath || ''));
-      await restoreFileLeafNames(entry.infoHash, currentFiles, leafNames);
-    }
-
-    async function restoreFileLeafNames(hash, currentFiles, leafNames) {
-      const limit = Math.min(currentFiles.length, leafNames.length);
-      for (let index = 0; index < limit; index += 1) {
-        const currentPath = String(currentFiles[index]?.name || '').trim();
-        if (!currentPath) {
-          continue;
-        }
-        const desiredLeafName = String(leafNames[index] || '').trim();
-        const desiredPath = joinPath(dirname(currentPath), desiredLeafName);
-        if (!desiredLeafName || currentPath === desiredPath) {
-          continue;
-        }
-        await api('/api/v2/torrents/renameFile', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-          },
-          body: new URLSearchParams({
-            hash,
-            oldPath: currentPath,
-            newPath: desiredPath
-          }).toString()
-        });
-      }
-    }
-
-    async function repairStoredPlaceholderFiles(hash, files) {
-      if (!Array.isArray(files) || !files.length) {
-        return false;
-      }
-      const stored = getStoredUploadMetadata(hash);
-      if (!stored || !Array.isArray(stored.fileLeafNames) || stored.fileLeafNames.length !== files.length) {
-        return false;
-      }
-      const hasPlaceholder = files.some((item) => isGeneratedFilePlaceholder(basename(item?.name || '')));
-      if (!hasPlaceholder) {
-        return false;
-      }
-      await restoreFileLeafNames(hash, files, stored.fileLeafNames);
-      const verifyResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-      const verifiedFiles = await verifyResponse.json();
-      if (!fileLeavesMatchExpected(verifiedFiles, stored.fileLeafNames)) {
-        const currentLeaves = Array.isArray(verifiedFiles)
-          ? verifiedFiles.map((item) => basename(item?.name || '')).join(', ')
-          : 'unavailable';
-        reportPendingRename(
-          `Stored metadata repair did not stick for ${hash}.\nExpected: ${stored.fileLeafNames.join(', ')}\nCurrent: ${currentLeaves}`,
-          'error'
-        );
-      } else {
-        reportPendingRename(`Stored metadata repair applied for ${hash}.`, 'ok');
-      }
-      return true;
-    }
-
-    async function repairManagedFileNames() {
-      const torrent = state.manage.torrent;
-      if (!torrent?.hash) {
-        return;
-      }
-      const stored = getStoredUploadMetadata(torrent.hash);
-      if (!stored || !Array.isArray(stored.fileLeafNames) || !stored.fileLeafNames.length) {
-        setStatus(
-          els.manageStatus,
-          `No stored .torrent metadata for ${torrent.hash}. Re-add this torrent with the latest page loaded so the app can remember the original filenames.`,
-          'error'
-        );
-        return;
-      }
-      els.repairNamesButton.disabled = true;
-      setStatus(els.manageStatus, 'Repairing file names from stored .torrent metadata...');
-      try {
-        const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(torrent.hash)}`);
-        const files = await response.json();
-        await restoreFileLeafNames(torrent.hash, files, stored.fileLeafNames);
-        const verifyResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(torrent.hash)}`);
-        const verifiedFiles = await verifyResponse.json();
-        if (!fileLeavesMatchExpected(verifiedFiles, stored.fileLeafNames)) {
-          const currentLeaves = Array.isArray(verifiedFiles)
-            ? verifiedFiles.map((item) => basename(item?.name || '')).join(', ')
-            : 'unavailable';
-          setStatus(
-            els.manageStatus,
-            `Repair did not stick.\nExpected: ${stored.fileLeafNames.join(', ')}\nCurrent: ${currentLeaves}`,
-            'error'
-          );
-          return;
-        }
-        setStatus(els.manageStatus, 'File names repaired from stored .torrent metadata.', 'ok');
-        await loadTorrentFiles(torrent.hash, { preserveStatus: true });
-      } catch (error) {
-        setStatus(els.manageStatus, `Repair failed.\n${error.message}`, 'error');
-      } finally {
-        els.repairNamesButton.disabled = false;
-      }
-    }
-
-    async function renameAddedTorrentParent(entry, currentFiles) {
-      const desiredParentName = getDesiredParentName(entry);
-      if (!desiredParentName || !Array.isArray(currentFiles) || !currentFiles.length) {
-        return currentFiles;
-      }
-      const firstPath = String(currentFiles[0]?.name || '').trim();
-      if (!firstPath) {
-        return currentFiles;
-      }
-      if (firstPath.includes('/')) {
-        const currentTopLevelName = firstPath.split('/').filter(Boolean)[0] || '';
-        if (currentTopLevelName && currentTopLevelName !== desiredParentName) {
-          await api('/api/v2/torrents/renameFolder', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-            },
-            body: new URLSearchParams({
-              hash: entry.infoHash,
-              oldPath: currentTopLevelName,
-              newPath: desiredParentName
-            }).toString()
-          });
-          return waitForUploadedTorrentFiles(entry.infoHash, 20, 400);
-        }
-        return currentFiles;
-      }
-      const currentLeafName = basename(firstPath);
-      if (currentLeafName !== desiredParentName) {
-        await api('/api/v2/torrents/renameFile', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-          },
-          body: new URLSearchParams({
-            hash: entry.infoHash,
-            oldPath: firstPath,
-            newPath: joinPath(dirname(firstPath), desiredParentName)
-          }).toString()
-        });
-        return waitForUploadedTorrentFiles(entry.infoHash, 20, 400);
-      }
-      return currentFiles;
-    }
-
-    async function processPendingRenamePlans() {
-      if (state.pendingRenameInFlight) {
-        return;
-      }
-      const pending = readPendingRenameMap();
-      const hashes = Object.keys(pending);
-      if (!hashes.length) {
-        return;
-      }
-      state.pendingRenameInFlight = true;
-      try {
-        for (const hash of hashes) {
-          try {
-            await applyPendingRenamePlan(hash, pending[hash]);
-          } catch (error) {
-            reportPendingRename(`Queued rename failed for ${hash}.\n${error.message}`, 'error');
-          }
-        }
-      } finally {
-        state.pendingRenameInFlight = false;
-      }
-    }
-
-    async function applyPendingRenamePlan(hash, plan) {
-      const torrent = findTorrent(hash);
-      if (!torrent || !plan) {
-        reportPendingRename(`Queued rename waiting for torrent ${hash} to appear.`);
-        return;
-      }
-      let files = [];
-      try {
-        const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-        files = await response.json();
-      } catch (error) {
-        reportPendingRename(`Queued rename could not read files for ${hash}.\n${error.message}`, 'error');
-        return;
-      }
-      if (!Array.isArray(files) || !files.length) {
-        reportPendingRename(`Queued rename waiting for files for ${hash}.`);
-        return;
-      }
-      const expectedLeafNames = Array.isArray(plan.expectedLeafNames) ? plan.expectedLeafNames.filter(Boolean) : [];
-      const entry = {
-        infoHash: hash,
-        desiredName: String(plan.desiredName || '').trim(),
-        originalName: String(plan.originalName || torrent.name || '').trim(),
-        useDesiredNameForParent: Boolean(plan.useDesiredNameForParent),
-        metadata: {
-          topLevelOriginalName: String(plan.originalName || torrent.name || '').trim(),
-          isMultiFile: files.some((item) => String(item?.name || '').includes('/'))
-        }
-      };
-      await renameTorrentDisplayName(entry);
-      if (expectedLeafNames.length) {
-        await applyUploadedMetadataPaths(hash, entry, files, expectedLeafNames);
-      } else if (shouldRenameInternalParent(entry)) {
-        await renameAddedTorrentParent(entry, files);
-      }
-      const verifyResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-      const verifiedFiles = await verifyResponse.json();
-      if (expectedLeafNames.length && !fileLeavesMatchExpected(verifiedFiles, expectedLeafNames)) {
-        const currentLeaves = Array.isArray(verifiedFiles)
-          ? verifiedFiles.map((item) => basename(item?.name || '')).join(', ')
-          : 'unavailable';
-        reportPendingRename(
-          `Queued rename did not stick for ${entry.desiredName || hash}.\nExpected: ${expectedLeafNames.join(', ')}\nCurrent: ${currentLeaves}`,
-          'error'
-        );
-        return;
-      }
-      clearPendingRenamePlan(hash);
-      reportPendingRename(`Queued rename applied for ${entry.desiredName || hash}.`, 'ok');
-    }
-
-    async function applyUploadedMetadataPaths(hash, entry, files, expectedLeafNames) {
-      const desiredParentName = getDesiredParentName(entry);
-      const useDesiredParent = shouldRenameInternalParent(entry) && desiredParentName;
-      const limit = Math.min(files.length, expectedLeafNames.length);
-      for (let index = 0; index < limit; index += 1) {
-        const currentPath = String(files[index]?.name || '').trim();
-        const desiredLeafName = String(expectedLeafNames[index] || '').trim();
-        if (!currentPath || !desiredLeafName) {
-          continue;
-        }
-        const currentParent = dirname(currentPath);
-        const targetParent = useDesiredParent
-          ? joinPath(dirname(currentParent), desiredParentName)
-          : currentParent;
-        const desiredPath = joinPath(targetParent, desiredLeafName);
-        if (currentPath === desiredPath) {
-          continue;
-        }
-        reportPendingRename(`Renaming file ${currentPath} -> ${desiredPath}`);
-        await api('/api/v2/torrents/renameFile', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-          },
-          body: new URLSearchParams({
-            hash,
-            oldPath: currentPath,
-            newPath: desiredPath
-          }).toString()
-        });
-      }
     }
 
     async function postAction(path, payload, successMessage, options = {}) {
@@ -4278,7 +3470,6 @@
       }
     });
     els.moveTorrentButton.addEventListener('click', moveManagedTorrent);
-    els.repairNamesButton.addEventListener('click', repairManagedFileNames);
     els.pickerUpButton.addEventListener('click', () => {
       const parent = dirname(state.manage.browserPath) || '/downloads';
       loadBrowserPath(parent).catch((error) => {
@@ -4390,54 +3581,6 @@
       if (event.key === 'Enter') {
         createFolderInAddBrowser();
       }
-    });
-    els.addMagnetRows.addEventListener('input', (event) => {
-      if (event.target && event.target.id === 'addUseDesiredNameForParent') {
-        state.add.useDesiredNameForParent = Boolean(event.target.checked);
-        return;
-      }
-      const magnetInput = event.target.closest('[data-add-magnet-index]');
-      if (magnetInput) {
-        const index = Number(magnetInput.getAttribute('data-add-magnet-index'));
-        if (!Number.isInteger(index) || !state.add.magnets[index]) {
-          return;
-        }
-        state.add.magnets[index].desiredName = magnetInput.value;
-        return;
-      }
-      const uploadInput = event.target.closest('[data-add-upload-index]');
-      if (!uploadInput) {
-        return;
-      }
-      const index = Number(uploadInput.getAttribute('data-add-upload-index'));
-      if (!Number.isInteger(index) || !state.add.uploads[index]) {
-        return;
-      }
-      state.add.uploads[index].desiredName = uploadInput.value;
-      return;
-    });
-    els.addMagnetRows.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-action="reset-magnet-name"]');
-      if (button) {
-        const index = Number(button.getAttribute('data-add-magnet-index'));
-        if (!Number.isInteger(index) || !state.add.magnets[index]) {
-          return;
-        }
-        state.add.magnets[index].desiredName = state.add.magnets[index].originalName;
-        renderAddMagnetRows();
-        return;
-      }
-      const uploadButton = event.target.closest('[data-action="reset-upload-name"]');
-      if (!uploadButton) {
-        return;
-      }
-      const index = Number(uploadButton.getAttribute('data-add-upload-index'));
-      if (!Number.isInteger(index) || !state.add.uploads[index]) {
-        return;
-      }
-      state.add.uploads[index].desiredName = state.add.uploads[index].originalName;
-      renderAddMagnetRows();
-      return;
     });
     els.submitMagnetButton.addEventListener('click', submitPreparedMagnets);
     window.addEventListener('scroll', () => {
