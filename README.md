@@ -4,6 +4,8 @@ Standalone torrent control UI extracted from `tsff-ui`.
 
 This repo contains the static fallback torrent frontend. It is meant to sit in front of qBittorrent plus the TSFF sync agent.
 
+This repo is the source of truth for the custom torrent UI served at `torrents.paidshitforfree.com/fallback/`.
+
 ## What this app needs
 
 - qBittorrent Web API under `/api/v2/...`
