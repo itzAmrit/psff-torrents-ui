@@ -1377,6 +1377,8 @@
   </div>
 
   <script data-cfasync="false">
+    const UPLOAD_METADATA_STORAGE_KEY = 'tsff_torrent_upload_metadata_v1';
+
     const state = {
       torrents: [],
       autoRefresh: null,
@@ -1658,6 +1660,40 @@
       }
       const lastSlash = normalized.lastIndexOf('/');
       return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+    }
+
+    function readStoredUploadMetadataMap() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(UPLOAD_METADATA_STORAGE_KEY) || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writeStoredUploadMetadataMap(payload) {
+      localStorage.setItem(UPLOAD_METADATA_STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    function storeUploadMetadata(entry) {
+      if (!entry?.infoHash || !Array.isArray(entry?.metadata?.files) || !entry.metadata.files.length) {
+        return;
+      }
+      const stored = readStoredUploadMetadataMap();
+      stored[entry.infoHash] = {
+        storedAt: Date.now(),
+        fileLeafNames: entry.metadata.files.map((item) => basename(item.originalPath || ''))
+      };
+      const trimmedEntries = Object.entries(stored)
+        .sort((left, right) => Number(right[1]?.storedAt || 0) - Number(left[1]?.storedAt || 0))
+        .slice(0, 100);
+      writeStoredUploadMetadataMap(Object.fromEntries(trimmedEntries));
+    }
+
+    function getStoredUploadMetadata(hash) {
+      const stored = readStoredUploadMetadataMap();
+      const item = stored[String(hash || '').trim()];
+      return item && Array.isArray(item.fileLeafNames) ? item : null;
     }
 
     function joinPath(parent, child) {
@@ -3410,7 +3446,11 @@
         setStatus(els.manageStatus, 'Loading current files and folders...');
       }
       const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-      const files = await response.json();
+      let files = await response.json();
+      if (await repairStoredPlaceholderFiles(hash, files)) {
+        const refreshed = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+        files = await refreshed.json();
+      }
       state.manage = {
         torrent,
         files,
@@ -3741,6 +3781,7 @@
       if (!entry?.infoHash) {
         return;
       }
+      storeUploadMetadata(entry);
       await renameTorrentDisplayName(entry);
       if (!shouldRenameInternalParent(entry)) {
         await restoreUploadedOriginalFileNames(entry);
@@ -3756,13 +3797,18 @@
         return;
       }
       const currentFiles = await waitForUploadedTorrentFiles(entry.infoHash, 20, 400);
-      const limit = Math.min(currentFiles.length, entry.metadata.files.length);
+      const leafNames = entry.metadata.files.map((item) => basename(item.originalPath || ''));
+      await restoreFileLeafNames(entry.infoHash, currentFiles, leafNames);
+    }
+
+    async function restoreFileLeafNames(hash, currentFiles, leafNames) {
+      const limit = Math.min(currentFiles.length, leafNames.length);
       for (let index = 0; index < limit; index += 1) {
         const currentPath = String(currentFiles[index]?.name || '').trim();
         if (!currentPath) {
           continue;
         }
-        const desiredLeafName = basename(entry.metadata.files[index]?.originalPath || currentPath);
+        const desiredLeafName = String(leafNames[index] || '').trim();
         const desiredPath = joinPath(dirname(currentPath), desiredLeafName);
         if (!desiredLeafName || currentPath === desiredPath) {
           continue;
@@ -3773,12 +3819,28 @@
             'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
           },
           body: new URLSearchParams({
-            hash: entry.infoHash,
+            hash,
             oldPath: currentPath,
             newPath: desiredPath
           }).toString()
         });
       }
+    }
+
+    async function repairStoredPlaceholderFiles(hash, files) {
+      if (!Array.isArray(files) || !files.length) {
+        return false;
+      }
+      const stored = getStoredUploadMetadata(hash);
+      if (!stored || !Array.isArray(stored.fileLeafNames) || stored.fileLeafNames.length !== files.length) {
+        return false;
+      }
+      const hasPlaceholder = files.some((item) => isGeneratedFilePlaceholder(basename(item?.name || '')));
+      if (!hasPlaceholder) {
+        return false;
+      }
+      await restoreFileLeafNames(hash, files, stored.fileLeafNames);
+      return true;
     }
 
     async function renameAddedTorrentParent(entry, currentFiles) {
