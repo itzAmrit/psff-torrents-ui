@@ -3347,7 +3347,11 @@
           for (const entry of state.add.uploads) {
             const form = new FormData();
             form.append('torrents', entry.file, entry.file.name);
-            form.append('savepath', entry.savePath || '/downloads');
+            form.append('savepath', getAddSavePath(entry));
+            if (shouldUseNoSubfolderLayout(entry)) {
+              form.append('root_folder', 'false');
+              form.append('contentLayout', 'NoSubfolder');
+            }
             const category = String(entry.category || '').trim();
             if (category) {
               form.append('category', category);
@@ -3369,8 +3373,12 @@
           for (const entry of state.add.magnets) {
             const body = new URLSearchParams({
               urls: entry.url,
-              savepath: entry.savePath || '/downloads'
+              savepath: getAddSavePath(entry)
             });
+            if (shouldUseNoSubfolderLayout(entry)) {
+              body.set('root_folder', 'false');
+              body.set('contentLayout', 'NoSubfolder');
+            }
             const category = String(entry.category || '').trim();
             if (category) {
               body.set('category', category);
@@ -3769,6 +3777,22 @@
       );
     }
 
+    function shouldUseNoSubfolderLayout(entry) {
+      return Boolean(
+        entry?.metadata?.isMultiFile
+        && entry?.useDesiredNameForParent
+        && getDesiredParentName(entry)
+      );
+    }
+
+    function getAddSavePath(entry) {
+      const basePath = normalizePath(entry?.savePath || '/downloads') || '/downloads';
+      if (!shouldUseNoSubfolderLayout(entry)) {
+        return basePath;
+      }
+      return joinPath(basePath, getDesiredParentName(entry));
+    }
+
     async function waitForAddedTorrent(hash, attempts = 30, delayMs = 500) {
       if (!hash) {
         throw new Error('Torrent hash is missing.');
@@ -3815,6 +3839,10 @@
       storeUploadMetadata(entry);
       await waitForQbMetadataFiles(entry);
       await renameTorrentDisplayName(entry);
+      if (shouldUseNoSubfolderLayout(entry)) {
+        await restoreUploadedOriginalFileNames(entry);
+        return;
+      }
       if (!shouldRenameInternalParent(entry)) {
         await restoreUploadedOriginalFileNames(entry);
         return;
@@ -3925,6 +3953,9 @@
         return;
       }
       await renameTorrentDisplayName(entry);
+      if (shouldUseNoSubfolderLayout(entry)) {
+        return;
+      }
       if (!shouldRenameInternalParent(entry)) {
         return;
       }
