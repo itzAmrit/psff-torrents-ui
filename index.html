@@ -1378,6 +1378,7 @@
 
   <script data-cfasync="false">
     const UPLOAD_METADATA_STORAGE_KEY = 'tsff_torrent_upload_metadata_v1';
+    const PENDING_RENAME_STORAGE_KEY = 'tsff_torrent_pending_renames_v1';
 
     const state = {
       torrents: [],
@@ -1419,7 +1420,8 @@
         samples: [],
         lastRunKey: '',
         queuedRunTimer: null
-      }
+      },
+      pendingRenameInFlight: false
     };
 
     const els = {
@@ -1675,6 +1677,19 @@
       localStorage.setItem(UPLOAD_METADATA_STORAGE_KEY, JSON.stringify(payload));
     }
 
+    function readPendingRenameMap() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(PENDING_RENAME_STORAGE_KEY) || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writePendingRenameMap(payload) {
+      localStorage.setItem(PENDING_RENAME_STORAGE_KEY, JSON.stringify(payload));
+    }
+
     function storeUploadMetadata(entry) {
       if (!entry?.infoHash || !Array.isArray(entry?.metadata?.files) || !entry.metadata.files.length) {
         return;
@@ -1694,6 +1709,46 @@
       const stored = readStoredUploadMetadataMap();
       const item = stored[String(hash || '').trim()];
       return item && Array.isArray(item.fileLeafNames) ? item : null;
+    }
+
+    function storePendingRenamePlan(entry) {
+      if (!entry?.infoHash) {
+        return;
+      }
+      const pending = readPendingRenameMap();
+      const expectedLeafNames = Array.isArray(entry?.metadata?.files)
+        ? entry.metadata.files.map((item) => basename(item.originalPath || '')).filter(Boolean)
+        : [];
+      pending[entry.infoHash] = {
+        storedAt: Date.now(),
+        desiredName: String(entry.desiredName || '').trim(),
+        originalName: String(entry.originalName || '').trim(),
+        useDesiredNameForParent: Boolean(entry.useDesiredNameForParent),
+        expectedLeafNames
+      };
+      const trimmedEntries = Object.entries(pending)
+        .sort((left, right) => Number(right[1]?.storedAt || 0) - Number(left[1]?.storedAt || 0))
+        .slice(0, 100);
+      writePendingRenameMap(Object.fromEntries(trimmedEntries));
+    }
+
+    function getPendingRenamePlan(hash) {
+      const pending = readPendingRenameMap();
+      const item = pending[String(hash || '').trim()];
+      return item && typeof item === 'object' ? item : null;
+    }
+
+    function clearPendingRenamePlan(hash) {
+      const key = String(hash || '').trim();
+      if (!key) {
+        return;
+      }
+      const pending = readPendingRenameMap();
+      if (!(key in pending)) {
+        return;
+      }
+      delete pending[key];
+      writePendingRenameMap(pending);
     }
 
     function joinPath(parent, child) {
@@ -2675,6 +2730,7 @@
       }
       const response = await api('/api/v2/torrents/info?sort=added_on&reverse=true');
       state.torrents = sortTorrents(await response.json());
+      await processPendingRenamePlans();
       state.syncRid = 0;
       syncCategoryFilterOptions();
       renderTable();
@@ -2696,6 +2752,7 @@
         const response = await api(`/api/v2/sync/maindata?rid=${encodeURIComponent(state.syncRid)}`);
         const payload = await response.json();
         applyTorrentSync(payload);
+        await processPendingRenamePlans();
         syncCategoryFilterOptions();
         renderTable();
         updateRefreshStamp();
@@ -3347,11 +3404,7 @@
           for (const entry of state.add.uploads) {
             const form = new FormData();
             form.append('torrents', entry.file, entry.file.name);
-            form.append('savepath', getAddSavePath(entry));
-            if (shouldUseNoSubfolderLayout(entry)) {
-              form.append('root_folder', 'false');
-              form.append('contentLayout', 'NoSubfolder');
-            }
+            form.append('savepath', entry.savePath || '/downloads');
             const category = String(entry.category || '').trim();
             if (category) {
               form.append('category', category);
@@ -3360,7 +3413,8 @@
               method: 'POST',
               body: form
             });
-            await applyUploadedTorrentNaming(entry);
+            storeUploadMetadata(entry);
+            storePendingRenamePlan(entry);
             requestBackgroundGcsSync({ immediate: true });
           }
           els.torrentFiles.value = '';
@@ -3373,12 +3427,8 @@
           for (const entry of state.add.magnets) {
             const body = new URLSearchParams({
               urls: entry.url,
-              savepath: getAddSavePath(entry)
+              savepath: entry.savePath || '/downloads'
             });
-            if (shouldUseNoSubfolderLayout(entry)) {
-              body.set('root_folder', 'false');
-              body.set('contentLayout', 'NoSubfolder');
-            }
             const category = String(entry.category || '').trim();
             if (category) {
               body.set('category', category);
@@ -3390,7 +3440,7 @@
               },
               body: body.toString()
             });
-            await renameMagnetTorrentContents(entry);
+            storePendingRenamePlan(entry);
             requestBackgroundGcsSync({ immediate: true });
           }
           els.magnetInput.value = '';
@@ -3717,23 +3767,6 @@
       return true;
     }
 
-    async function waitForQbMetadataFiles(entry, attempts = 60, delayMs = 500) {
-      if (!entry?.infoHash || !Array.isArray(entry?.metadata?.files) || !entry.metadata.files.length) {
-        return waitForUploadedTorrentFiles(entry?.infoHash, attempts, delayMs);
-      }
-      const expectedLeafNames = entry.metadata.files.map((item) => basename(item.originalPath || ''));
-      let lastFiles = [];
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        const files = await waitForUploadedTorrentFiles(entry.infoHash, 1, delayMs);
-        lastFiles = files;
-        if (fileLeavesMatchExpected(files, expectedLeafNames)) {
-          return files;
-        }
-        await sleep(delayMs);
-      }
-      return lastFiles.length ? lastFiles : waitForUploadedTorrentFiles(entry.infoHash, 20, delayMs);
-    }
-
     function parseMagnetInfoHash(url) {
       try {
         const parsed = new URL(url);
@@ -3777,22 +3810,6 @@
       );
     }
 
-    function shouldUseNoSubfolderLayout(entry) {
-      return Boolean(
-        entry?.metadata?.isMultiFile
-        && entry?.useDesiredNameForParent
-        && getDesiredParentName(entry)
-      );
-    }
-
-    function getAddSavePath(entry) {
-      const basePath = normalizePath(entry?.savePath || '/downloads') || '/downloads';
-      if (!shouldUseNoSubfolderLayout(entry)) {
-        return basePath;
-      }
-      return joinPath(basePath, getDesiredParentName(entry));
-    }
-
     async function waitForAddedTorrent(hash, attempts = 30, delayMs = 500) {
       if (!hash) {
         throw new Error('Torrent hash is missing.');
@@ -3830,26 +3847,6 @@
 
     function shouldRenameInternalParent(entry) {
       return Boolean(entry?.useDesiredNameForParent && String(entry?.desiredName || '').trim());
-    }
-
-    async function applyUploadedTorrentNaming(entry) {
-      if (!entry?.infoHash) {
-        return;
-      }
-      storeUploadMetadata(entry);
-      await waitForQbMetadataFiles(entry);
-      await renameTorrentDisplayName(entry);
-      if (shouldUseNoSubfolderLayout(entry)) {
-        await restoreUploadedOriginalFileNames(entry);
-        return;
-      }
-      if (!shouldRenameInternalParent(entry)) {
-        await restoreUploadedOriginalFileNames(entry);
-        return;
-      }
-      const currentFiles = await waitForQbMetadataFiles(entry);
-      await renameAddedTorrentParent(entry, currentFiles);
-      await restoreUploadedOriginalFileNames(entry);
     }
 
     async function restoreUploadedOriginalFileNames(entry) {
@@ -3948,19 +3945,64 @@
       return currentFiles;
     }
 
-    async function renameMagnetTorrentContents(entry) {
-      if (!entry?.infoHash) {
+    async function processPendingRenamePlans() {
+      if (state.pendingRenameInFlight) {
         return;
       }
+      const pending = readPendingRenameMap();
+      const hashes = Object.keys(pending);
+      if (!hashes.length) {
+        return;
+      }
+      state.pendingRenameInFlight = true;
+      try {
+        for (const hash of hashes) {
+          await applyPendingRenamePlan(hash, pending[hash]);
+        }
+      } finally {
+        state.pendingRenameInFlight = false;
+      }
+    }
+
+    async function applyPendingRenamePlan(hash, plan) {
+      const torrent = findTorrent(hash);
+      if (!torrent || !plan) {
+        return;
+      }
+      let files = [];
+      try {
+        const response = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+        files = await response.json();
+      } catch (_) {
+        return;
+      }
+      if (!Array.isArray(files) || !files.length) {
+        return;
+      }
+      const expectedLeafNames = Array.isArray(plan.expectedLeafNames) ? plan.expectedLeafNames.filter(Boolean) : [];
+      if (expectedLeafNames.length && !fileLeavesMatchExpected(files, expectedLeafNames)) {
+        return;
+      }
+      const entry = {
+        infoHash: hash,
+        desiredName: String(plan.desiredName || '').trim(),
+        originalName: String(plan.originalName || torrent.name || '').trim(),
+        useDesiredNameForParent: Boolean(plan.useDesiredNameForParent),
+        metadata: {
+          topLevelOriginalName: String(plan.originalName || torrent.name || '').trim(),
+          isMultiFile: files.some((item) => String(item?.name || '').includes('/'))
+        }
+      };
       await renameTorrentDisplayName(entry);
-      if (shouldUseNoSubfolderLayout(entry)) {
-        return;
+      if (shouldRenameInternalParent(entry)) {
+        files = await renameAddedTorrentParent(entry, files);
       }
-      if (!shouldRenameInternalParent(entry)) {
-        return;
+      if (expectedLeafNames.length) {
+        const refreshedResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+        const refreshedFiles = await refreshedResponse.json();
+        await restoreFileLeafNames(hash, Array.isArray(refreshedFiles) && refreshedFiles.length ? refreshedFiles : files, expectedLeafNames);
       }
-      const currentFiles = await waitForUploadedTorrentFiles(entry.infoHash);
-      await renameAddedTorrentParent(entry, currentFiles);
+      clearPendingRenamePlan(hash);
     }
 
     async function postAction(path, payload, successMessage, options = {}) {
