@@ -3980,9 +3980,6 @@
         return;
       }
       const expectedLeafNames = Array.isArray(plan.expectedLeafNames) ? plan.expectedLeafNames.filter(Boolean) : [];
-      if (expectedLeafNames.length && !fileLeavesMatchExpected(files, expectedLeafNames)) {
-        return;
-      }
       const entry = {
         infoHash: hash,
         desiredName: String(plan.desiredName || '').trim(),
@@ -3994,15 +3991,44 @@
         }
       };
       await renameTorrentDisplayName(entry);
-      if (shouldRenameInternalParent(entry)) {
-        files = await renameAddedTorrentParent(entry, files);
-      }
       if (expectedLeafNames.length) {
-        const refreshedResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
-        const refreshedFiles = await refreshedResponse.json();
-        await restoreFileLeafNames(hash, Array.isArray(refreshedFiles) && refreshedFiles.length ? refreshedFiles : files, expectedLeafNames);
+        await applyUploadedMetadataPaths(hash, entry, files, expectedLeafNames);
+      } else if (shouldRenameInternalParent(entry)) {
+        await renameAddedTorrentParent(entry, files);
       }
       clearPendingRenamePlan(hash);
+    }
+
+    async function applyUploadedMetadataPaths(hash, entry, files, expectedLeafNames) {
+      const desiredParentName = getDesiredParentName(entry);
+      const useDesiredParent = shouldRenameInternalParent(entry) && desiredParentName;
+      const limit = Math.min(files.length, expectedLeafNames.length);
+      for (let index = 0; index < limit; index += 1) {
+        const currentPath = String(files[index]?.name || '').trim();
+        const desiredLeafName = String(expectedLeafNames[index] || '').trim();
+        if (!currentPath || !desiredLeafName) {
+          continue;
+        }
+        const currentParent = dirname(currentPath);
+        const targetParent = useDesiredParent
+          ? joinPath(dirname(currentParent), desiredParentName)
+          : currentParent;
+        const desiredPath = joinPath(targetParent, desiredLeafName);
+        if (currentPath === desiredPath) {
+          continue;
+        }
+        await api('/api/v2/torrents/renameFile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            hash,
+            oldPath: currentPath,
+            newPath: desiredPath
+          }).toString()
+        });
+      }
     }
 
     async function postAction(path, payload, successMessage, options = {}) {
