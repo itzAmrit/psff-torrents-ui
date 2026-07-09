@@ -1,0 +1,72 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 3600s
+
+substitutions:
+  _DEPLOY_TOPIC: psff-gitops-deploys
+
+steps:
+  - id: Prepare build metadata
+    name: node:24-bookworm-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        COMMIT_SHA_SAFE="$COMMIT_SHA"
+        SHORT_SHA_SAFE="$SHORT_SHA"
+        IMAGE_REPO="us-central1-docker.pkg.dev/$PROJECT_ID/psff-images/psff-torrents-ui"
+        printf 'COMMIT_SHA_SAFE=%s\nSHORT_SHA_SAFE=%s\nIMAGE_SHA_TAG=sha-%s\nIMAGE_REPO=%s\n' \
+          "$${COMMIT_SHA_SAFE}" "$${SHORT_SHA_SAFE}" "$${SHORT_SHA_SAFE}" "$${IMAGE_REPO}" > /workspace/.cloudbuild.env
+
+  - id: Prepare Artifact Registry auth
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        mkdir -p /workspace/.docker
+        ACCESS_TOKEN="$(gcloud auth print-access-token)"
+        AUTH_VALUE="$(printf 'oauth2accesstoken:%s' "$${ACCESS_TOKEN}" | base64 | tr -d '\n')"
+        cat > /workspace/.docker/config.json <<EOF
+        {"auths":{"us-central1-docker.pkg.dev":{"auth":"$${AUTH_VALUE}"}}}
+        EOF
+        chmod 600 /workspace/.docker/config.json
+
+  - id: Build image
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    env:
+      - DOCKER_CONFIG=/workspace/.docker
+    args:
+      - -ceu
+      - |
+        . /workspace/.cloudbuild.env
+        docker build \
+          --file ./Dockerfile \
+          --tag "$${IMAGE_REPO}:$${IMAGE_SHA_TAG}" \
+          --tag "$${IMAGE_REPO}:latest" \
+          .
+
+  - id: Push image
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    env:
+      - DOCKER_CONFIG=/workspace/.docker
+    args:
+      - -ceu
+      - |
+        . /workspace/.cloudbuild.env
+        docker push "$${IMAGE_REPO}:$${IMAGE_SHA_TAG}"
+        docker push "$${IMAGE_REPO}:latest"
+
+  - id: Publish deploy request
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        . /workspace/.cloudbuild.env
+        gcloud pubsub topics publish "projects/$PROJECT_ID/topics/${_DEPLOY_TOPIC}" \
+          --message="torrents-ui deploy request" \
+          --attribute="app=torrents-ui,image_tag=$${IMAGE_SHA_TAG},image_repo=$${IMAGE_REPO},source_commit_sha=$${COMMIT_SHA_SAFE},source_short_sha=$${SHORT_SHA_SAFE}"

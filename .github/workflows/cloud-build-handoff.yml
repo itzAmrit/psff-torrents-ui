@@ -1,0 +1,20 @@
+name: Cloud Build Handoff
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: read
+
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Use Cloud Build
+        run: |
+          echo "This repo now publishes through Google Cloud Build and Artifact Registry."
+          echo "Push to main to trigger the primary deploy flow."

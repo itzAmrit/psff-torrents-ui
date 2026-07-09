@@ -41,3 +41,34 @@ Replace:
 ```bash
 docker compose -f docker-compose.example.yml up --build -d
 ```
+
+## Docker Artifact
+
+The production UI is packaged as its own Docker image:
+
+```bash
+us-central1-docker.pkg.dev/psff-cloud-run-496515/psff-images/psff-torrents-ui:<tag>
+```
+
+The container serves static assets on port `80`. On the VM, nginx stays responsible for exposing `/`, `/api/`, `/api/gcs-sync/`, and `/__downloads__/`.
+
+## Deployment
+
+Primary flow:
+
+1. push to `main`
+2. Cloud Build builds `us-central1-docker.pkg.dev/$PROJECT_ID/psff-images/psff-torrents-ui`
+3. Cloud Build pushes:
+   - `latest`
+   - `sha-<shortSha>`
+4. Cloud Build publishes a deploy request to the `psff-gitops-deploys` Pub/Sub topic
+5. the `psff-gitops` Pub/Sub deploy trigger updates `versions.torrents-ui.env`
+6. `psff-gitops` deploys the new tag onto `tsff-ui-vm`
+
+Cloud Build config:
+
+- [cloudbuild.yaml](/Users/null/Downloads/Codes/live/psff-torrents-ui/cloudbuild.yaml)
+
+GitHub Actions is manual fallback only via:
+
+- [.github/workflows/cloud-build-handoff.yml](/Users/null/Downloads/Codes/live/psff-torrents-ui/.github/workflows/cloud-build-handoff.yml)
