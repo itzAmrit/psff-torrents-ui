@@ -69,6 +69,20 @@
       text-transform: uppercase;
     }
 
+    .build-stamp {
+      display: inline-flex;
+      width: fit-content;
+      margin: 0;
+      padding: 6px 10px;
+      border: 1px solid rgba(103, 235, 213, 0.24);
+      border-radius: 999px;
+      background: rgba(103, 235, 213, 0.08);
+      color: #a9f5e7;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
     h1 {
       margin: 14px 0 8px;
       font-size: clamp(34px, 6vw, 58px);
@@ -1023,6 +1037,7 @@
       <div class="stack">
         <span class="eyebrow">Private Torrent Surface</span>
         <h1>TSFF Torrent Control</h1>
+        <p class="build-stamp">UI build: 2026-07-11 00:28:15 IST</p>
         <p>This page talks directly to the qBittorrent API on the TSFF VM. It bypasses the broken stock WebUI while keeping the same download and seeding backend.</p>
       </div>
       <div class="mini-grid">
