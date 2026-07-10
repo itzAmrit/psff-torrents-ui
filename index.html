@@ -1304,7 +1304,18 @@
               <button id="modalRefreshButton" class="secondary" type="button">Reload Files</button>
             </div>
           </div>
-          <div id="manageStatus" class="status-box span-12">Choose a destination or rename a folder/file below.</div>
+          <div class="field span-6">
+            <label for="manageCategoryInput">Category</label>
+            <input id="manageCategoryInput" type="text" list="manageCategorySuggestions" placeholder="Category">
+            <datalist id="manageCategorySuggestions"></datalist>
+          </div>
+          <div class="field span-6">
+            <label>&nbsp;</label>
+            <div class="compact-row">
+              <button id="saveCategoryButton" type="button">Set Category</button>
+            </div>
+          </div>
+          <div id="manageStatus" class="status-box span-12">Choose a destination, change the category, or rename a folder/file below.</div>
         </div>
 
         <div class="entry-shell">
@@ -1499,6 +1510,9 @@
       manageCurrentLocation: document.getElementById('manageCurrentLocation'),
       manageSelectedLocation: document.getElementById('manageSelectedLocation'),
       manageCustomLocation: document.getElementById('manageCustomLocation'),
+      manageCategoryInput: document.getElementById('manageCategoryInput'),
+      manageCategorySuggestions: document.getElementById('manageCategorySuggestions'),
+      saveCategoryButton: document.getElementById('saveCategoryButton'),
       moveTorrentButton: document.getElementById('moveTorrentButton'),
       modalRefreshButton: document.getElementById('modalRefreshButton'),
       manageStatus: document.getElementById('manageStatus'),
@@ -2544,13 +2558,17 @@
     }
 
     function syncAddCategorySuggestions() {
-      if (!els.addCategorySuggestions) {
-        return;
-      }
       const categories = getKnownCategories();
-      els.addCategorySuggestions.innerHTML = categories
-        .map((category) => `<option value="${escapeHtml(category)}"></option>`)
-        .join('');
+      if (els.addCategorySuggestions) {
+        els.addCategorySuggestions.innerHTML = categories
+          .map((category) => `<option value="${escapeHtml(category)}"></option>`)
+          .join('');
+      }
+      if (els.manageCategorySuggestions) {
+        els.manageCategorySuggestions.innerHTML = categories
+          .map((category) => `<option value="${escapeHtml(category)}"></option>`)
+          .join('');
+      }
     }
 
     function isActiveTorrent(torrent) {
@@ -2820,6 +2838,8 @@
       if (!els.manageCustomLocation.value) {
         els.manageCustomLocation.value = els.manageSelectedLocation.value;
       }
+      els.manageCategoryInput.value = torrent.category || '';
+      syncAddCategorySuggestions();
       renderBrowser();
       els.manageFolders.innerHTML = renderRenameRows(state.manage.folders, 'folder');
       els.manageFiles.innerHTML = renderRenameRows(state.manage.files, 'file');
@@ -3490,6 +3510,7 @@
       els.manageFiles.innerHTML = '';
       els.manageCustomLocation.value = '';
       els.manageSelectedLocation.value = '';
+      els.manageCategoryInput.value = '';
       els.pickerBreadcrumbs.innerHTML = '';
       els.pickerList.innerHTML = '';
     }
@@ -3527,6 +3548,40 @@
         setStatus(els.manageStatus, `Move failed.\n${error.message}`, 'error');
       } finally {
         els.moveTorrentButton.disabled = false;
+      }
+    }
+
+    async function saveManagedCategory() {
+      const torrent = state.manage.torrent;
+      if (!torrent) {
+        return;
+      }
+      const category = String(els.manageCategoryInput.value || '').trim();
+      els.saveCategoryButton.disabled = true;
+      setStatus(els.manageStatus, 'Updating category...');
+      try {
+        await api('/api/v2/torrents/setCategory', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            hashes: torrent.hash,
+            category
+          }).toString()
+        });
+        setStatus(els.manageStatus, 'Category updated successfully.', 'ok');
+        requestBackgroundGcsSync({ immediate: true });
+        await syncTorrents({ silent: true });
+        // Refresh local state object in modal
+        const refreshedTorrent = findTorrent(torrent.hash);
+        if (refreshedTorrent) {
+          state.manage.torrent = refreshedTorrent;
+        }
+      } catch (error) {
+        setStatus(els.manageStatus, `Failed to update category.\n${error.message}`, 'error');
+      } finally {
+        els.saveCategoryButton.disabled = false;
       }
     }
 
@@ -3817,6 +3872,7 @@
       }
     });
     els.moveTorrentButton.addEventListener('click', moveManagedTorrent);
+    els.saveCategoryButton.addEventListener('click', saveManagedCategory);
     els.pickerUpButton.addEventListener('click', () => {
       const parent = dirname(state.manage.browserPath) || '/downloads';
       loadBrowserPath(parent).catch((error) => {
