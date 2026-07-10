@@ -1377,6 +1377,8 @@
   </div>
 
   <script data-cfasync="false">
+    const PENDING_TOP_LEVEL_RENAME_KEY = 'tsff_torrent_top_level_renames_v2';
+
     const state = {
       torrents: [],
       autoRefresh: null,
@@ -1416,7 +1418,8 @@
         samples: [],
         lastRunKey: '',
         queuedRunTimer: null
-      }
+      },
+      pendingTopLevelRenameInFlight: false
     };
 
     const els = {
@@ -1669,6 +1672,48 @@
         return normalizedParent;
       }
       return `${normalizedParent}/${normalizedChild}`;
+    }
+
+    function readPendingTopLevelRenames() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(PENDING_TOP_LEVEL_RENAME_KEY) || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writePendingTopLevelRenames(plans) {
+      localStorage.setItem(PENDING_TOP_LEVEL_RENAME_KEY, JSON.stringify(plans));
+    }
+
+    function queueTopLevelRename(entry) {
+      const hash = String(entry?.infoHash || '').trim().toLowerCase();
+      const desiredName = String(entry?.desiredName || '').trim();
+      if (!hash || !desiredName) {
+        throw new Error('Torrent hash and name are required before renaming.');
+      }
+      const plans = readPendingTopLevelRenames();
+      plans[hash] = {
+        desiredName,
+        renameParent: Boolean(entry.renameParent),
+        storedAt: Date.now()
+      };
+      writePendingTopLevelRenames(Object.fromEntries(
+        Object.entries(plans)
+          .sort((left, right) => Number(right[1]?.storedAt || 0) - Number(left[1]?.storedAt || 0))
+          .slice(0, 100)
+      ));
+    }
+
+    function clearTopLevelRename(hash) {
+      const key = String(hash || '').trim().toLowerCase();
+      const plans = readPendingTopLevelRenames();
+      if (!(key in plans)) {
+        return;
+      }
+      delete plans[key];
+      writePendingTopLevelRenames(plans);
     }
 
     function needsSeed(torrent) {
@@ -2642,6 +2687,7 @@
       syncCategoryFilterOptions();
       renderTable();
       updateRefreshStamp();
+      await processPendingTopLevelRenames();
       if (!silent) {
         setStatus(els.actionStatus, `Loaded ${state.torrents.length} torrent(s).`, 'ok');
       }
@@ -2662,6 +2708,7 @@
         syncCategoryFilterOptions();
         renderTable();
         updateRefreshStamp();
+        await processPendingTopLevelRenames();
         if (!silent) {
           setStatus(els.actionStatus, `Loaded ${state.torrents.length} torrent(s).`, 'ok');
         }
@@ -2781,6 +2828,262 @@
       return value.replace(/\.torrent$/i, '') || value;
     }
 
+    function normalizeDesiredTorrentName(value) {
+      const desiredName = String(value || '').trim();
+      if (!desiredName) {
+        throw new Error('Torrent name cannot be empty.');
+      }
+      if (desiredName === '.' || desiredName === '..' || /[\\/]/.test(desiredName)) {
+        throw new Error('Torrent name cannot contain path separators.');
+      }
+      return desiredName;
+    }
+
+    function utf8Decode(bytes) {
+      return new TextDecoder('utf-8').decode(bytes);
+    }
+
+    function readBencodeNode(bytes, startIndex = 0) {
+      const marker = bytes[startIndex];
+      if (marker === 105) {
+        let cursor = startIndex + 1;
+        while (cursor < bytes.length && bytes[cursor] !== 101) {
+          cursor += 1;
+        }
+        if (cursor >= bytes.length) {
+          throw new Error('Invalid torrent file: unterminated integer.');
+        }
+        return {
+          type: 'int',
+          value: Number.parseInt(utf8Decode(bytes.slice(startIndex + 1, cursor)), 10),
+          start: startIndex,
+          end: cursor + 1
+        };
+      }
+      if (marker === 108) {
+        const value = [];
+        let cursor = startIndex + 1;
+        while (cursor < bytes.length && bytes[cursor] !== 101) {
+          const child = readBencodeNode(bytes, cursor);
+          value.push(child);
+          cursor = child.end;
+        }
+        if (cursor >= bytes.length) {
+          throw new Error('Invalid torrent file: unterminated list.');
+        }
+        return { type: 'list', value, start: startIndex, end: cursor + 1 };
+      }
+      if (marker === 100) {
+        const value = {};
+        let cursor = startIndex + 1;
+        while (cursor < bytes.length && bytes[cursor] !== 101) {
+          const keyNode = readBencodeNode(bytes, cursor);
+          if (keyNode.type !== 'bytes') {
+            throw new Error('Invalid torrent file: dictionary key is not a string.');
+          }
+          const child = readBencodeNode(bytes, keyNode.end);
+          value[keyNode.text] = child;
+          cursor = child.end;
+        }
+        if (cursor >= bytes.length) {
+          throw new Error('Invalid torrent file: unterminated dictionary.');
+        }
+        return { type: 'dict', value, start: startIndex, end: cursor + 1 };
+      }
+      if (marker >= 48 && marker <= 57) {
+        let cursor = startIndex;
+        while (cursor < bytes.length && bytes[cursor] !== 58) {
+          cursor += 1;
+        }
+        if (cursor >= bytes.length) {
+          throw new Error('Invalid torrent file: bad byte string length.');
+        }
+        const length = Number.parseInt(utf8Decode(bytes.slice(startIndex, cursor)), 10);
+        const valueStart = cursor + 1;
+        const valueEnd = valueStart + length;
+        if (!Number.isFinite(length) || length < 0 || valueEnd > bytes.length) {
+          throw new Error('Invalid torrent file: byte string length exceeds file.');
+        }
+        const value = bytes.slice(valueStart, valueEnd);
+        return {
+          type: 'bytes',
+          value,
+          text: utf8Decode(value),
+          start: startIndex,
+          end: valueEnd
+        };
+      }
+      throw new Error('Invalid torrent file: unsupported bencode token.');
+    }
+
+    async function digestHex(algorithm, bytes) {
+      const digest = await crypto.subtle.digest(algorithm, bytes);
+      return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function parseTorrentIdentity(file) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const root = readBencodeNode(bytes);
+      const infoNode = root.type === 'dict' ? root.value.info : null;
+      if (!infoNode || infoNode.type !== 'dict') {
+        throw new Error('Torrent info dictionary is missing.');
+      }
+      const info = infoNode.value;
+      const originalName = String(info['name.utf-8']?.text || info.name?.text || '').trim();
+      const isPureV2 = Number(info['meta version']?.value || 0) === 2 && !info.pieces;
+      return {
+        infoHash: await digestHex(isPureV2 ? 'SHA-256' : 'SHA-1', bytes.slice(infoNode.start, infoNode.end)),
+        originalName: originalName || stripTorrentExtension(file.name)
+      };
+    }
+
+    function parseMagnetInfoHash(url) {
+      try {
+        const parsed = new URL(url);
+        for (const xtValue of parsed.searchParams.getAll('xt')) {
+          const xt = String(xtValue || '').trim();
+          const btih = xt.match(/^urn:btih:([A-Za-z0-9]+)$/i);
+          if (btih) {
+            const rawHash = btih[1].trim();
+            if (/^[a-f0-9]{40}$/i.test(rawHash)) {
+              return rawHash.toLowerCase();
+            }
+            if (/^[A-Z2-7]{32}$/i.test(rawHash)) {
+              const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+              let bits = '';
+              rawHash.toUpperCase().split('').forEach((char) => {
+                bits += alphabet.indexOf(char).toString(2).padStart(5, '0');
+              });
+              const bytes = [];
+              for (let index = 0; index + 8 <= bits.length; index += 8) {
+                bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+              }
+              return bytes.map((value) => value.toString(16).padStart(2, '0')).join('').slice(0, 40);
+            }
+          }
+          const btmh = xt.match(/^urn:btmh:1220([a-f0-9]{64})$/i);
+          if (btmh) {
+            return btmh[1].toLowerCase();
+          }
+        }
+      } catch (_) {
+      }
+      return '';
+    }
+
+    async function postTorrentRename(path, values) {
+      await api(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+        },
+        body: new URLSearchParams(values).toString()
+      });
+    }
+
+    function topLevelParentFromFiles(files) {
+      const paths = Array.isArray(files)
+        ? files.map((file) => String(file?.name || '').trim()).filter(Boolean)
+        : [];
+      if (!paths.length) {
+        return null;
+      }
+      if (paths.length === 1 && !paths[0].includes('/')) {
+        return { kind: 'file', path: paths[0] };
+      }
+      const segments = paths.map((path) => path.split('/').filter(Boolean));
+      const parent = segments[0]?.[0] || '';
+      const hasOneSharedParent = Boolean(parent) && segments.every((parts) => parts.length > 1 && parts[0] === parent);
+      return hasOneSharedParent ? { kind: 'folder', path: parent } : null;
+    }
+
+    async function applyTopLevelRenamePlan(hash, plan) {
+      const desiredName = normalizeDesiredTorrentName(plan?.desiredName);
+      const infoResponse = await api(`/api/v2/torrents/info?hashes=${encodeURIComponent(hash)}`);
+      const torrents = await infoResponse.json();
+      const torrent = Array.isArray(torrents) ? torrents[0] : null;
+      if (!torrent) {
+        return false;
+      }
+
+      if (String(torrent.name || '') !== desiredName) {
+        await postTorrentRename('/api/v2/torrents/rename', {
+          hash,
+          name: desiredName
+        });
+      }
+      if (!plan.renameParent) {
+        return true;
+      }
+
+      const filesResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+      const files = await filesResponse.json();
+      if (!Array.isArray(files) || !files.length) {
+        return false;
+      }
+      const parent = topLevelParentFromFiles(files);
+      if (!parent) {
+        throw new Error('qBittorrent did not expose one top-level parent; child files were left untouched.');
+      }
+      if (parent.path === desiredName) {
+        return true;
+      }
+
+      await postTorrentRename(
+        parent.kind === 'folder' ? '/api/v2/torrents/renameFolder' : '/api/v2/torrents/renameFile',
+        {
+          hash,
+          oldPath: parent.path,
+          newPath: desiredName
+        }
+      );
+
+      const verifyResponse = await api(`/api/v2/torrents/files?hash=${encodeURIComponent(hash)}`);
+      const verifiedParent = topLevelParentFromFiles(await verifyResponse.json());
+      return Boolean(verifiedParent && verifiedParent.kind === parent.kind && verifiedParent.path === desiredName);
+    }
+
+    async function processPendingTopLevelRenames() {
+      if (state.pendingTopLevelRenameInFlight) {
+        return;
+      }
+      const plans = readPendingTopLevelRenames();
+      const entries = Object.entries(plans);
+      if (!entries.length) {
+        return;
+      }
+      state.pendingTopLevelRenameInFlight = true;
+      try {
+        for (const [hash, plan] of entries) {
+          if ((Date.now() - Number(plan?.storedAt || 0)) > 24 * 60 * 60 * 1000) {
+            clearTopLevelRename(hash);
+            continue;
+          }
+          if ((Date.now() - Number(plan?.lastAttemptAt || 0)) < 3000) {
+            continue;
+          }
+          try {
+            const complete = await applyTopLevelRenamePlan(hash, plan);
+            if (complete) {
+              clearTopLevelRename(hash);
+              setStatus(els.actionStatus, `Applied torrent name${plan.renameParent ? ' and matching parent name' : ''}: ${plan.desiredName}`, 'ok');
+              requestBackgroundGcsSync({ immediate: true });
+            }
+          } catch (error) {
+            const latestPlans = readPendingTopLevelRenames();
+            if (latestPlans[hash]) {
+              latestPlans[hash].lastAttemptAt = Date.now();
+              latestPlans[hash].lastError = String(error?.message || error);
+              writePendingTopLevelRenames(latestPlans);
+            }
+            console.warn(`Top-level rename is still pending for ${hash}:`, error);
+          }
+        }
+      } finally {
+        state.pendingTopLevelRenameInFlight = false;
+      }
+    }
+
     function getPreparedAddEntries() {
       return state.add.mode === 'upload' ? state.add.uploads : state.add.magnets;
     }
@@ -2801,26 +3104,29 @@
         return;
       }
 
-      if (state.add.mode === 'upload') {
-        els.addMagnetRows.innerHTML = `
-          <div class="entry-row">
-            <div class="entry-path">
-              <strong>${escapeHtml(entry.originalName)}</strong>
-              <span>${escapeHtml(entry.sourceFileName || entry.originalName)} • uploaded torrent file</span>
-            </div>
-          </div>
-          <div class="hint">Adding will not rename torrent files. Use Manage after qBittorrent adds the torrent if you want to rename files.</div>
-        `;
-        return;
-      }
-
+      const sourceLabel = state.add.mode === 'upload'
+        ? `${entry.sourceFileName || entry.originalName} • top-level torrent name`
+        : 'Magnet display name';
       els.addMagnetRows.innerHTML = `
         <div class="entry-row">
           <div class="entry-path">
             <strong>${escapeHtml(entry.originalName)}</strong>
-            <span>Magnet display name or fallback label. Adding will not rename torrent files.</span>
+            <span>${escapeHtml(sourceLabel)}</span>
           </div>
+          <div class="entry-rename">
+            <input
+              type="text"
+              value="${escapeHtml(entry.desiredName)}"
+              data-add-torrent-name
+              placeholder="Torrent name"
+            >
+          </div>
+          <label class="inline-check">
+            <input type="checkbox" data-add-rename-parent ${entry.renameParent ? 'checked' : ''}>
+            <span>Same as parent</span>
+          </label>
         </div>
+        <div class="hint">Checked: rename only the top-level folder or single-file name to match the torrent name. Unchecked: change only the torrent name. Child filenames are never changed.</div>
       `;
     }
 
@@ -2968,6 +3274,12 @@
         setStatus(els.addMagnetStatus, 'Choose a destination first.', 'error');
         return false;
       }
+      try {
+        entry.desiredName = normalizeDesiredTorrentName(entry.desiredName);
+      } catch (error) {
+        setStatus(els.addMagnetStatus, error.message, 'error');
+        return false;
+      }
       entry.savePath = destination;
       entry.category = category;
       state.add.selectedLocation = destination;
@@ -3015,6 +3327,10 @@
           setStatus(els.addMagnetStatus, `No ${state.add.mode === 'upload' ? 'torrent files' : 'magnet links'} queued.`, 'error');
           return;
         }
+        const missingHash = entries.find((entry) => !String(entry.infoHash || '').trim());
+        if (missingHash) {
+          throw new Error(`Could not determine the torrent hash for ${missingHash.originalName}. The torrent was not added.`);
+        }
         const shouldSubmit = advancePreparedAddStep();
         if (!shouldSubmit) {
           return;
@@ -3035,6 +3351,7 @@
               method: 'POST',
               body: form
             });
+            queueTopLevelRename(entry);
             requestBackgroundGcsSync({ immediate: true });
           }
           els.torrentFiles.value = '';
@@ -3060,6 +3377,7 @@
               },
               body: body.toString()
             });
+            queueTopLevelRename(entry);
             requestBackgroundGcsSync({ immediate: true });
           }
           els.magnetInput.value = '';
@@ -3067,6 +3385,7 @@
           closeAddMagnetModal();
           setStatus(els.actionStatus, `Added ${entries.length} magnet link(s).`, 'ok');
         }
+        await processPendingTopLevelRenames();
         await syncTorrents({ silent: true });
       } catch (error) {
         setStatus(els.addMagnetStatus, `Failed to ${state.add.mode === 'upload' ? 'upload torrent files' : 'add magnets'}.\n${error.message}`, 'error');
@@ -3272,6 +3591,9 @@
         return {
           url,
           originalName,
+          desiredName: originalName,
+          infoHash: parseMagnetInfoHash(url),
+          renameParent: true,
           savePath: '',
           category: ''
         };
@@ -3292,16 +3614,26 @@
         return;
       }
 
-      const uploads = files.map((file) => {
-        const fallbackName = stripTorrentExtension(file.name);
-        return {
-          file,
-          sourceFileName: file.name,
-          originalName: fallbackName,
-          savePath: '',
-          category: ''
-        };
-      });
+      setStatus(els.actionStatus, `Reading ${files.length} torrent file(s)...`);
+      let uploads;
+      try {
+        uploads = await Promise.all(files.map(async (file) => {
+          const identity = await parseTorrentIdentity(file);
+          return {
+            file,
+            sourceFileName: file.name,
+            originalName: identity.originalName,
+            desiredName: identity.originalName,
+            infoHash: identity.infoHash,
+            renameParent: true,
+            savePath: '',
+            category: ''
+          };
+        }));
+      } catch (error) {
+        setStatus(els.actionStatus, `Could not read torrent metadata.\n${error.message}`, 'error');
+        return;
+      }
 
       state.add.mode = 'upload';
       state.add.currentIndex = 0;
@@ -3580,6 +3912,18 @@
     els.addNewFolderName.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         createFolderInAddBrowser();
+      }
+    });
+    els.addMagnetRows.addEventListener('input', (event) => {
+      const entry = getCurrentPreparedEntry();
+      if (!entry) {
+        return;
+      }
+      if (event.target.matches('[data-add-torrent-name]')) {
+        entry.desiredName = event.target.value;
+      }
+      if (event.target.matches('[data-add-rename-parent]')) {
+        entry.renameParent = Boolean(event.target.checked);
       }
     });
     els.submitMagnetButton.addEventListener('click', submitPreparedMagnets);
