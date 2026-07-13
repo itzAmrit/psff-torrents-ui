@@ -1037,7 +1037,7 @@
       <div class="stack">
         <span class="eyebrow">Private Torrent Surface</span>
         <h1>TSFF Torrent Control</h1>
-        <p class="build-stamp">UI build: 2026-07-11 00:28:15 IST</p>
+        <p class="build-stamp">UI build: 2026-07-13 09:52:38 IST</p>
         <p>This page talks directly to the qBittorrent API on the TSFF VM. It bypasses the broken stock WebUI while keeping the same download and seeding backend.</p>
       </div>
       <div class="mini-grid">
@@ -2572,15 +2572,7 @@
     }
 
     function isActiveTorrent(torrent) {
-      const stateName = String(torrent.state || '').toLowerCase();
-      return (
-        Number(torrent.num_leechs || 0) > 0 ||
-        Number(torrent.dlspeed || 0) > 0 ||
-        Number(torrent.upspeed || 0) > 0 ||
-        stateName.includes('down') ||
-        stateName.includes('meta') ||
-        stateName.includes('check')
-      );
+      return Number(torrent.dlspeed || 0) > 0 || Number(torrent.upspeed || 0) > 0;
     }
 
     function renderTorrentSectionRow(label, count, totalCount) {
