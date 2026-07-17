@@ -147,7 +147,7 @@
     .global-stats {
       display: grid;
       gap: 8px;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
     }
 
     .global-stat {
@@ -1229,7 +1229,8 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .global-stat:first-child {
+      .global-stat:first-child,
+      .global-stat:last-child {
         grid-column: span 2;
       }
 
@@ -1250,7 +1251,7 @@
         </div>
         <div class="hero-meta">
           <span class="session-pill"><span class="session-dot"></span><span id="sessionState">Not logged in</span></span>
-          <p class="build-stamp">UI build: 2026-07-15 06:39:49 IST</p>
+          <p class="build-stamp">UI build: 2026-07-17 11:21:21 IST</p>
         </div>
       </div>
       <div class="global-stats" aria-label="Global torrent statistics">
@@ -1273,6 +1274,10 @@
         <article class="global-stat demand">
           <span class="label">Seed demand</span>
           <strong id="seedDemandCount">0</strong>
+        </article>
+        <article class="global-stat">
+          <span class="label">Disk remaining</span>
+          <strong id="remainingDiskSpace">—</strong>
         </article>
       </div>
     </section>
@@ -1629,6 +1634,7 @@
 
     const state = {
       torrents: [],
+      serverState: {},
       autoRefresh: null,
       syncRid: 0,
       syncInFlight: false,
@@ -1677,6 +1683,7 @@
       globalUploadSpeed: document.getElementById('globalUploadSpeed'),
       seedDemandCount: document.getElementById('seedDemandCount'),
       torrentCount: document.getElementById('torrentCount'),
+      remainingDiskSpace: document.getElementById('remainingDiskSpace'),
       syncBucketState: document.getElementById('syncBucketState'),
       syncRuntimeState: document.getElementById('syncRuntimeState'),
       syncLastRun: document.getElementById('syncLastRun'),
@@ -2038,6 +2045,7 @@
       });
 
       state.torrents = sortTorrents(Array.from(nextMap.values()));
+      state.serverState = { ...state.serverState, ...(payload.server_state || {}) };
       state.syncRid = Number(payload.rid || 0);
     }
 
@@ -2715,6 +2723,7 @@
       } catch (_) {}
       setLoggedIn(false);
       state.torrents = [];
+      state.serverState = {};
       renderTable();
       setStatus(els.loginStatus, 'Signed out.', 'ok');
     }
@@ -2903,11 +2912,15 @@
       const globalDownloadSpeed = state.torrents.reduce((total, torrent) => total + Number(torrent.dlspeed || 0), 0);
       const globalUploadSpeed = state.torrents.reduce((total, torrent) => total + Number(torrent.upspeed || 0), 0);
       const seedDemand = state.torrents.filter(needsSeed).length;
+      const remainingDiskSpace = Number(state.serverState.free_space_on_disk);
       els.activeTorrentCount.textContent = String(activeTorrents.length);
       els.globalDownloadSpeed.textContent = formatSpeed(globalDownloadSpeed);
       els.globalUploadSpeed.textContent = formatSpeed(globalUploadSpeed);
       els.seedDemandCount.textContent = String(seedDemand);
       els.torrentCount.textContent = String(state.torrents.length);
+      els.remainingDiskSpace.textContent = Number.isFinite(remainingDiskSpace) && remainingDiskSpace >= 0
+        ? formatBytes(remainingDiskSpace)
+        : '—';
       els.emptyState.classList.toggle('hidden', rows.length > 0);
 
       if (!rows.length) {
