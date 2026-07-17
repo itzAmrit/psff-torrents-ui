@@ -147,7 +147,7 @@
     .global-stats {
       display: grid;
       gap: 8px;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(8, minmax(0, 1fr));
     }
 
     .global-stat {
@@ -1155,7 +1155,7 @@
 
     @media (max-width: 980px) {
       .global-stats {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
 
       .sync-metrics,
@@ -1251,7 +1251,7 @@
         </div>
         <div class="hero-meta">
           <span class="session-pill"><span class="session-dot"></span><span id="sessionState">Not logged in</span></span>
-          <p class="build-stamp">UI build: 2026-07-17 11:21:21 IST</p>
+          <p class="build-stamp">UI build: 2026-07-18 01:24:35 IST</p>
         </div>
       </div>
       <div class="global-stats" aria-label="Global torrent statistics">
@@ -1266,6 +1266,14 @@
         <article class="global-stat">
           <span class="label">Upload</span>
           <strong id="globalUploadSpeed">0 B/s</strong>
+        </article>
+        <article class="global-stat">
+          <span class="label">Total downloaded</span>
+          <strong id="totalDownloaded">—</strong>
+        </article>
+        <article class="global-stat">
+          <span class="label">Total uploaded</span>
+          <strong id="totalUploaded">—</strong>
         </article>
         <article class="global-stat">
           <span class="label">Torrents</span>
@@ -1683,6 +1691,8 @@
       globalUploadSpeed: document.getElementById('globalUploadSpeed'),
       seedDemandCount: document.getElementById('seedDemandCount'),
       torrentCount: document.getElementById('torrentCount'),
+      totalDownloaded: document.getElementById('totalDownloaded'),
+      totalUploaded: document.getElementById('totalUploaded'),
       remainingDiskSpace: document.getElementById('remainingDiskSpace'),
       syncBucketState: document.getElementById('syncBucketState'),
       syncRuntimeState: document.getElementById('syncRuntimeState'),
@@ -2912,12 +2922,20 @@
       const globalDownloadSpeed = state.torrents.reduce((total, torrent) => total + Number(torrent.dlspeed || 0), 0);
       const globalUploadSpeed = state.torrents.reduce((total, torrent) => total + Number(torrent.upspeed || 0), 0);
       const seedDemand = state.torrents.filter(needsSeed).length;
+      const totalDownloaded = Number(state.serverState.alltime_dl);
+      const totalUploaded = Number(state.serverState.alltime_ul);
       const remainingDiskSpace = Number(state.serverState.free_space_on_disk);
       els.activeTorrentCount.textContent = String(activeTorrents.length);
       els.globalDownloadSpeed.textContent = formatSpeed(globalDownloadSpeed);
       els.globalUploadSpeed.textContent = formatSpeed(globalUploadSpeed);
       els.seedDemandCount.textContent = String(seedDemand);
       els.torrentCount.textContent = String(state.torrents.length);
+      els.totalDownloaded.textContent = Number.isFinite(totalDownloaded) && totalDownloaded >= 0
+        ? formatBytes(totalDownloaded)
+        : '—';
+      els.totalUploaded.textContent = Number.isFinite(totalUploaded) && totalUploaded >= 0
+        ? formatBytes(totalUploaded)
+        : '—';
       els.remainingDiskSpace.textContent = Number.isFinite(remainingDiskSpace) && remainingDiskSpace >= 0
         ? formatBytes(remainingDiskSpace)
         : '—';
