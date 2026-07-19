@@ -2575,11 +2575,20 @@
         return;
       }
       els.ytDlpJobs.innerHTML = jobs.map((job) => {
-        const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
         const status = String(job.status || 'unknown');
-        const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
-        const speed = job.speed || (status === 'running' ? 'Starting' : '—');
-        const eta = job.eta || (status === 'completed' ? 'Done' : '—');
+        const phase = String(job.phase || (status === 'running' ? 'downloading' : status));
+        const statusLabel = phase === 'postprocessing'
+          ? 'Post-processing'
+          : status.charAt(0).toUpperCase() + status.slice(1);
+        const downloadProgress = Math.max(0, Math.min(100, Number(job.download_progress ?? job.progress ?? 0)));
+        const postprocessProgress = job.postprocess_progress == null
+          ? null
+          : Math.max(0, Math.min(100, Number(job.postprocess_progress)));
+        const showPostprocess = phase === 'postprocessing' || Boolean(job.has_postprocess);
+        const downloadSpeed = job.download_speed || (phase === 'downloading' ? 'Starting' : 'Done');
+        const downloadEta = job.download_eta || (phase === 'downloading' ? '—' : 'Done');
+        const postprocessSpeed = job.postprocess_speed || (phase === 'postprocessing' ? 'Working' : 'Done');
+        const postprocessEta = job.postprocess_eta || (phase === 'postprocessing' ? 'Calculating' : 'Done');
         const startedAt = Number(job.started_at || 0) > 0
           ? new Date(Number(job.started_at) * 1000).toLocaleTimeString()
           : 'Unknown';
@@ -2597,13 +2606,22 @@
                   : ''}
               </div>
             </div>
-            <div class="yt-dlp-progress" aria-label="${progress.toFixed(1)}% complete">
-              <span style="width:${progress}%"></span>
-            </div>
             <div class="yt-dlp-job-meta">
-              <span>${progress.toFixed(1)}%</span>
-              <span>${escapeHtml(speed)} • ETA ${escapeHtml(eta)}</span>
+              <span>Download</span>
+              <span>${downloadProgress.toFixed(1)}% • ${escapeHtml(downloadSpeed)} • ETA ${escapeHtml(downloadEta)}</span>
             </div>
+            <div class="yt-dlp-progress" aria-label="Download ${downloadProgress.toFixed(1)}% complete">
+              <span style="width:${downloadProgress}%"></span>
+            </div>
+            ${showPostprocess ? `
+              <div class="yt-dlp-job-meta">
+                <span>Post-processing</span>
+                <span>${postprocessProgress == null ? 'Measuring' : `${postprocessProgress.toFixed(1)}%`} • ${escapeHtml(postprocessSpeed)} • ETA ${escapeHtml(postprocessEta)}</span>
+              </div>
+              <div class="yt-dlp-progress" aria-label="Post-processing ${postprocessProgress == null ? 'in progress' : `${postprocessProgress.toFixed(1)}% complete`}">
+                <span style="width:${postprocessProgress == null ? 4 : postprocessProgress}%"></span>
+              </div>
+            ` : ''}
             ${job.error ? `<div class="yt-dlp-error">${escapeHtml(job.error)}</div>` : ''}
           </article>
         `;

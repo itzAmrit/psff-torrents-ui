@@ -27,6 +27,22 @@ ETA_RE = re.compile(r"\sETA\s+(\S+)")
 DESTINATION_RE = re.compile(
     r"(?:Destination:|Merging formats into)\s+[\"']?(.+?)[\"']?$"
 )
+POSTPROCESS_TARGET_RE = re.compile(
+    r"\[(?:Fixup[^]]*|VideoRemuxer|VideoConvertor|ExtractAudio|Metadata|EmbedSubtitle|EmbedThumbnail)\].*?[\"'](.+?)[\"']"
+)
+FFMPEG_DURATION_RE = re.compile(r"Duration:\s+(\d+):(\d+):(\d+(?:\.\d+)?)")
+FFMPEG_TIME_RE = re.compile(r"\btime=(\d+):(\d+):(\d+(?:\.\d+)?)")
+FFMPEG_SPEED_RE = re.compile(r"\bspeed=\s*(\d+(?:\.\d+)?)x")
+POSTPROCESS_MARKERS = (
+    "[Merger]",
+    "[Fixup",
+    "[VideoRemuxer]",
+    "[VideoConvertor]",
+    "[ExtractAudio]",
+    "[Metadata]",
+    "[EmbedSubtitle]",
+    "[EmbedThumbnail]",
+)
 
 
 def destination_from_savepath(savepath):
@@ -110,11 +126,29 @@ def start_download(url, destination):
     return job
 
 
+def clock_seconds(hours, minutes, seconds):
+    return (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
+
+
+def format_eta(total_seconds):
+    value = max(0, int(total_seconds))
+    hours, remainder = divmod(value, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
 def parse_job_log(job):
     result = {
-        "progress": 100.0 if job.get("status") == "completed" else 0.0,
-        "speed": None,
-        "eta": None,
+        "phase": "completed" if job.get("status") == "completed" else "downloading",
+        "download_progress": 100.0 if job.get("status") == "completed" else 0.0,
+        "download_speed": None,
+        "download_eta": None,
+        "postprocess_progress": 100.0 if job.get("status") == "completed" else None,
+        "postprocess_speed": None,
+        "postprocess_eta": None,
+        "has_postprocess": False,
         "filename": None,
         "error": None,
     }
@@ -128,19 +162,87 @@ def parse_job_log(job):
     except OSError:
         return result
 
-    for line in text.splitlines():
+    ffmpeg_duration = None
+    ffmpeg_time = None
+    ffmpeg_speed = None
+    saw_postprocess = False
+    for line in text.replace("\r", "\n").splitlines():
         progress_match = PROGRESS_RE.search(line)
         if progress_match:
-            result["progress"] = float(progress_match.group(1))
+            result["download_progress"] = float(progress_match.group(1))
             speed_match = SPEED_RE.search(line)
             eta_match = ETA_RE.search(line)
-            result["speed"] = speed_match.group(1) if speed_match else result["speed"]
-            result["eta"] = eta_match.group(1) if eta_match else result["eta"]
+            result["download_speed"] = speed_match.group(1) if speed_match else result["download_speed"]
+            result["download_eta"] = eta_match.group(1) if eta_match else result["download_eta"]
         destination_match = DESTINATION_RE.search(line)
         if destination_match:
             result["filename"] = Path(destination_match.group(1)).name
+        postprocess_target_match = POSTPROCESS_TARGET_RE.search(line)
+        if postprocess_target_match:
+            result["filename"] = Path(postprocess_target_match.group(1)).name
+        if any(marker in line for marker in POSTPROCESS_MARKERS):
+            saw_postprocess = True
+        duration_match = FFMPEG_DURATION_RE.search(line)
+        if duration_match:
+            ffmpeg_duration = clock_seconds(*duration_match.groups())
+        time_match = FFMPEG_TIME_RE.search(line)
+        if time_match:
+            ffmpeg_time = clock_seconds(*time_match.groups())
+            saw_postprocess = True
+        ffmpeg_speed_match = FFMPEG_SPEED_RE.search(line)
+        if ffmpeg_speed_match:
+            ffmpeg_speed = float(ffmpeg_speed_match.group(1))
         if line.startswith("ERROR:"):
             result["error"] = line.removeprefix("ERROR:").strip()
+
+    if saw_postprocess and job.get("status") == "running":
+        result["phase"] = "postprocessing"
+        result["download_progress"] = 100.0
+        result["download_eta"] = None
+        if ffmpeg_duration and ffmpeg_time is not None:
+            result["postprocess_progress"] = max(
+                0.0,
+                min(99.9, (ffmpeg_time / ffmpeg_duration) * 100),
+            )
+            if ffmpeg_speed and ffmpeg_speed > 0:
+                result["postprocess_speed"] = f"{ffmpeg_speed:.2f}x"
+                result["postprocess_eta"] = format_eta(
+                    (ffmpeg_duration - ffmpeg_time) / ffmpeg_speed
+                )
+        if result["postprocess_progress"] is None and result["filename"]:
+            final_path = Path(job["destination"]) / result["filename"]
+            temp_path = final_path.with_name(f"{final_path.stem}.temp{final_path.suffix}")
+            try:
+                source_size = final_path.stat().st_size
+                temp_size = temp_path.stat().st_size
+                if source_size > 0:
+                    result["postprocess_progress"] = max(
+                        0.0,
+                        min(99.9, (temp_size / source_size) * 100),
+                    )
+            except OSError:
+                pass
+    elif job.get("status") == "failed":
+        result["phase"] = "failed"
+    elif job.get("status") == "cancelled":
+        result["phase"] = "cancelled"
+
+    result["has_postprocess"] = saw_postprocess
+    result["progress"] = (
+        result["postprocess_progress"]
+        if result["phase"] == "postprocessing" and result["postprocess_progress"] is not None
+        else result["download_progress"]
+    )
+    result["speed"] = (
+        result["postprocess_speed"]
+        if result["phase"] == "postprocessing"
+        else result["download_speed"]
+    )
+    result["eta"] = (
+        result["postprocess_eta"]
+        if result["phase"] == "postprocessing"
+        else result["download_eta"]
+    )
     return result
 
 
