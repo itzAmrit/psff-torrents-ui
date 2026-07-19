@@ -476,6 +476,7 @@
 
     .status-box {
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
       color: var(--muted);
       min-height: 56px;
     }
@@ -1251,7 +1252,7 @@
         </div>
         <div class="hero-meta">
           <span class="session-pill"><span class="session-dot"></span><span id="sessionState">Not logged in</span></span>
-          <p class="build-stamp">UI build: 2026-07-18 01:24:35 IST</p>
+          <p class="build-stamp">UI build: 2026-07-19 07:49:08 IST</p>
         </div>
       </div>
       <div class="global-stats" aria-label="Global torrent statistics">
@@ -1794,7 +1795,10 @@
         return;
       }
       target.textContent = message;
-      target.className = `status-box${kind ? ` ${kind}` : ''}`;
+      target.classList.remove('ok', 'error');
+      if (kind) {
+        target.classList.add(kind);
+      }
     }
 
     function setLoggedIn(loggedIn) {
