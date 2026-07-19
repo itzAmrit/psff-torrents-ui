@@ -3703,7 +3703,7 @@
             if (category) {
               body.set('category', category);
             }
-            await api('/api/yt-dlp/download', {
+            await api('/yt-dlp/download', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
