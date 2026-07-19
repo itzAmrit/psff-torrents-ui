@@ -591,6 +591,92 @@
       background: linear-gradient(90deg, var(--accent), var(--accent-2));
     }
 
+    .yt-dlp-panel {
+      margin-top: 12px;
+      padding: 14px;
+      border-radius: 18px;
+      background: var(--panel-soft);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .yt-dlp-head,
+    .yt-dlp-job-head,
+    .yt-dlp-job-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .yt-dlp-head h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .yt-dlp-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .yt-dlp-jobs {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .yt-dlp-job {
+      display: grid;
+      gap: 9px;
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .yt-dlp-job-title {
+      min-width: 0;
+    }
+
+    .yt-dlp-job-title strong,
+    .yt-dlp-job-title span {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+
+    .yt-dlp-job-title strong {
+      font-size: 13px;
+    }
+
+    .yt-dlp-job-title span,
+    .yt-dlp-job-meta {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .yt-dlp-progress {
+      width: 100%;
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .yt-dlp-progress span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      transition: width 200ms ease;
+    }
+
+    .yt-dlp-error {
+      color: #ffd5d5;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
     .pill {
       display: inline-flex;
       margin-top: 6px;
@@ -1448,6 +1534,19 @@
         <div id="actionStatus" class="status-box span-12">Ready.</div>
       </div>
       </details>
+
+      <section class="yt-dlp-panel" aria-labelledby="ytDlpJobsTitle">
+        <div class="yt-dlp-head">
+          <div>
+            <h3 id="ytDlpJobsTitle">yt-dlp downloads</h3>
+            <p>Live progress for downloads started from this server.</p>
+          </div>
+          <button id="refreshYtDlpJobsButton" class="secondary" type="button">Refresh downloads</button>
+        </div>
+        <div id="ytDlpJobs" class="yt-dlp-jobs">
+          <div class="hint">No yt-dlp downloads started since the worker last restarted.</div>
+        </div>
+      </section>
     </section>
 
     <section id="tablePanel" class="panel hidden">
@@ -1676,6 +1775,9 @@
         selectedLocation: '/downloads',
         selectedCategory: ''
       },
+      ytDlpJobs: [],
+      ytDlpSyncInFlight: false,
+      ytDlpCompletedNotified: new Set(),
       gcsSync: {
         poller: null,
         nextDelayMs: 2000,
@@ -1748,6 +1850,8 @@
       addYtDlpButton: document.getElementById('addYtDlpButton'),
       uploadButton: document.getElementById('uploadButton'),
       actionStatus: document.getElementById('actionStatus'),
+      ytDlpJobs: document.getElementById('ytDlpJobs'),
+      refreshYtDlpJobsButton: document.getElementById('refreshYtDlpJobsButton'),
       torrentTable: document.getElementById('torrentTable'),
       emptyState: document.getElementById('emptyState'),
       manageModal: document.getElementById('manageModal'),
@@ -1813,6 +1917,10 @@
         stopAutoRefresh();
         state.syncRid = 0;
         state.syncInFlight = false;
+        state.ytDlpJobs = [];
+        renderYtDlpJobs();
+      } else {
+        syncYtDlpJobs({ silent: true }).catch(() => {});
       }
     }
 
@@ -2441,7 +2549,108 @@
       stopAutoRefresh();
       state.autoRefresh = setInterval(() => {
         syncTorrents({ silent: true }).catch(() => {});
+        syncYtDlpJobs({ silent: true }).catch(() => {});
       }, 2000);
+    }
+
+    function ytDlpJobLabel(job) {
+      if (job.filename) {
+        return job.filename;
+      }
+      try {
+        const parsed = new URL(job.url);
+        return parsed.hostname + (parsed.pathname === '/' ? '' : parsed.pathname);
+      } catch (_) {
+        return job.url || 'Media download';
+      }
+    }
+
+    function renderYtDlpJobs() {
+      if (!els.ytDlpJobs) {
+        return;
+      }
+      const jobs = Array.isArray(state.ytDlpJobs) ? state.ytDlpJobs : [];
+      if (!jobs.length) {
+        els.ytDlpJobs.innerHTML = '<div class="hint">No yt-dlp downloads started since the worker last restarted.</div>';
+        return;
+      }
+      els.ytDlpJobs.innerHTML = jobs.map((job) => {
+        const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+        const status = String(job.status || 'unknown');
+        const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+        const speed = job.speed || (status === 'running' ? 'Starting' : '—');
+        const eta = job.eta || (status === 'completed' ? 'Done' : '—');
+        const startedAt = Number(job.started_at || 0) > 0
+          ? new Date(Number(job.started_at) * 1000).toLocaleTimeString()
+          : 'Unknown';
+        return `
+          <article class="yt-dlp-job">
+            <div class="yt-dlp-job-head">
+              <div class="yt-dlp-job-title">
+                <strong>${escapeHtml(ytDlpJobLabel(job))}</strong>
+                <span>${escapeHtml(job.destination || '/downloads')} • started ${escapeHtml(startedAt)}</span>
+              </div>
+              <div class="compact-row">
+                <span class="pill">${escapeHtml(statusLabel)}</span>
+                ${status === 'running'
+                  ? `<button class="danger" type="button" data-yt-dlp-cancel="${escapeHtml(job.id)}">Cancel</button>`
+                  : ''}
+              </div>
+            </div>
+            <div class="yt-dlp-progress" aria-label="${progress.toFixed(1)}% complete">
+              <span style="width:${progress}%"></span>
+            </div>
+            <div class="yt-dlp-job-meta">
+              <span>${progress.toFixed(1)}%</span>
+              <span>${escapeHtml(speed)} • ETA ${escapeHtml(eta)}</span>
+            </div>
+            ${job.error ? `<div class="yt-dlp-error">${escapeHtml(job.error)}</div>` : ''}
+          </article>
+        `;
+      }).join('');
+    }
+
+    async function syncYtDlpJobs(options = {}) {
+      if (state.ytDlpSyncInFlight) {
+        return;
+      }
+      state.ytDlpSyncInFlight = true;
+      if (els.refreshYtDlpJobsButton) {
+        els.refreshYtDlpJobsButton.disabled = true;
+      }
+      try {
+        const response = await api('/yt-dlp/jobs/');
+        const payload = await response.json();
+        state.ytDlpJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+        state.ytDlpJobs.forEach((job) => {
+          if (job.status === 'completed' && !state.ytDlpCompletedNotified.has(job.id)) {
+            state.ytDlpCompletedNotified.add(job.id);
+            requestBackgroundGcsSync({ immediate: true });
+          }
+        });
+        renderYtDlpJobs();
+      } catch (error) {
+        if (!options.silent) {
+          els.ytDlpJobs.innerHTML = `<div class="yt-dlp-error">Could not load yt-dlp progress: ${escapeHtml(error.message)}</div>`;
+        }
+      } finally {
+        state.ytDlpSyncInFlight = false;
+        if (els.refreshYtDlpJobsButton) {
+          els.refreshYtDlpJobsButton.disabled = false;
+        }
+      }
+    }
+
+    async function cancelYtDlpJob(jobId) {
+      if (!jobId) {
+        return;
+      }
+      try {
+        await api(`/yt-dlp/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+        await syncYtDlpJobs();
+      } catch (error) {
+        setStatus(els.actionStatus, `Could not cancel yt-dlp download.\n${error.message}`, 'error');
+      }
     }
 
     function encodeDownloadsPath(path) {
@@ -3716,6 +3925,7 @@
           state.add.ytDlpUrls = [];
           closeAddMagnetModal();
           setStatus(els.actionStatus, `Started ${downloadCount} yt-dlp download(s).`, 'ok');
+          await syncYtDlpJobs();
         } else {
           setStatus(els.addMagnetStatus, `Adding ${state.add.magnets.length} magnet link(s) with saved destinations and categories...`);
           for (const entry of state.add.magnets) {
@@ -4181,6 +4391,16 @@
     els.addMagnetButton.addEventListener('click', addMagnets);
     els.addYtDlpButton.addEventListener('click', addYtDlpDownloads);
     els.uploadButton.addEventListener('click', uploadTorrents);
+    els.refreshYtDlpJobsButton.addEventListener('click', () => {
+      syncYtDlpJobs().catch(() => {});
+    });
+    els.ytDlpJobs.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-yt-dlp-cancel]');
+      if (!button) {
+        return;
+      }
+      cancelYtDlpJob(button.getAttribute('data-yt-dlp-cancel') || '');
+    });
     els.filterState.addEventListener('change', renderTable);
     els.categoryFilter.addEventListener('change', renderTable);
     els.searchInput.addEventListener('input', renderTable);

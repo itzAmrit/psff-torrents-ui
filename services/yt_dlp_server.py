@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+import signal
 import subprocess
 import threading
 import time
@@ -16,7 +18,15 @@ LISTEN_HOST = os.environ.get("YT_DLP_LISTEN_HOST", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("YT_DLP_LISTEN_PORT", "8090"))
 MAX_BODY_BYTES = 64 * 1024
 jobs = {}
+processes = {}
 jobs_lock = threading.Lock()
+
+PROGRESS_RE = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
+SPEED_RE = re.compile(r"\sat\s+(\S+)")
+ETA_RE = re.compile(r"\sETA\s+(\S+)")
+DESTINATION_RE = re.compile(
+    r"(?:Destination:|Merging formats into)\s+[\"']?(.+?)[\"']?$"
+)
 
 
 def destination_from_savepath(savepath):
@@ -49,9 +59,11 @@ def finish_job(job_id, process, log_handle):
     return_code = process.wait()
     log_handle.close()
     with jobs_lock:
+        processes.pop(job_id, None)
         job = jobs.get(job_id)
         if job is not None:
-            job["status"] = "completed" if return_code == 0 else "failed"
+            if job["status"] != "cancelled":
+                job["status"] = "completed" if return_code == 0 else "failed"
             job["return_code"] = return_code
             job["finished_at"] = int(time.time())
 
@@ -89,12 +101,67 @@ def start_download(url, destination):
     }
     with jobs_lock:
         jobs[job_id] = job
+        processes[job_id] = process
     threading.Thread(
         target=finish_job,
         args=(job_id, process, log_handle),
         daemon=True,
     ).start()
     return job
+
+
+def parse_job_log(job):
+    result = {
+        "progress": 100.0 if job.get("status") == "completed" else 0.0,
+        "speed": None,
+        "eta": None,
+        "filename": None,
+        "error": None,
+    }
+    log_path = Path(job["log_path"])
+    try:
+        with log_path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - 128 * 1024))
+            text = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return result
+
+    for line in text.splitlines():
+        progress_match = PROGRESS_RE.search(line)
+        if progress_match:
+            result["progress"] = float(progress_match.group(1))
+            speed_match = SPEED_RE.search(line)
+            eta_match = ETA_RE.search(line)
+            result["speed"] = speed_match.group(1) if speed_match else result["speed"]
+            result["eta"] = eta_match.group(1) if eta_match else result["eta"]
+        destination_match = DESTINATION_RE.search(line)
+        if destination_match:
+            result["filename"] = Path(destination_match.group(1)).name
+        if line.startswith("ERROR:"):
+            result["error"] = line.removeprefix("ERROR:").strip()
+    return result
+
+
+def public_job(job):
+    destination = Path(job["destination"])
+    try:
+        relative = destination.relative_to(DOWNLOAD_ROOT)
+        savepath = "/downloads" if not relative.parts else f"/downloads/{relative.as_posix()}"
+    except ValueError:
+        savepath = "/downloads"
+    details = parse_job_log(job)
+    return {
+        "id": job["id"],
+        "url": job["url"],
+        "destination": savepath,
+        "status": job["status"],
+        "started_at": job["started_at"],
+        "finished_at": job.get("finished_at"),
+        "return_code": job.get("return_code"),
+        **details,
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -141,24 +208,48 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json(
             202,
-            {
-                "id": job["id"],
-                "status": job["status"],
-                "destination": job["destination"],
-            },
+            public_job(job),
         )
 
     def do_GET(self):
-        if not self.path.startswith("/jobs/"):
+        clean_path = self.path.split("?", 1)[0]
+        if clean_path in {"/jobs", "/jobs/"}:
+            with jobs_lock:
+                items = [dict(job) for job in jobs.values()]
+            items.sort(key=lambda job: job["started_at"], reverse=True)
+            self.send_json(200, {"jobs": [public_job(job) for job in items]})
+            return
+        if not clean_path.startswith("/jobs/"):
             self.send_json(404, {"error": "Not found."})
             return
-        job_id = self.path.removeprefix("/jobs/").split("?", 1)[0]
+        job_id = clean_path.removeprefix("/jobs/")
         with jobs_lock:
             job = dict(jobs.get(job_id) or {})
         if not job:
             self.send_json(404, {"error": "Download job not found."})
             return
-        self.send_json(200, job)
+        self.send_json(200, public_job(job))
+
+    def do_DELETE(self):
+        clean_path = self.path.split("?", 1)[0]
+        if not clean_path.startswith("/jobs/"):
+            self.send_json(404, {"error": "Not found."})
+            return
+        job_id = clean_path.removeprefix("/jobs/")
+        with jobs_lock:
+            job = jobs.get(job_id)
+            process = processes.get(job_id)
+            if job is None:
+                self.send_json(404, {"error": "Download job not found."})
+                return
+            if process is None or process.poll() is not None:
+                self.send_json(409, {"error": "Download job is no longer running."})
+                return
+            job["status"] = "cancelled"
+            job["finished_at"] = int(time.time())
+            os.killpg(process.pid, signal.SIGTERM)
+            response = public_job(dict(job))
+        self.send_json(200, response)
 
     def log_message(self, message, *args):
         print(

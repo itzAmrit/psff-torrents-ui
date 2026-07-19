@@ -14,6 +14,16 @@ This repo is the source of truth for the custom torrent UI served at `torrents.p
 
 The UI uses all of those directly from the browser, so the reverse proxy on the same host must expose them.
 
+## yt-dlp downloads
+
+The UI image includes a small local worker around the `yt-dlp` CLI. It accepts
+downloads at `POST /yt-dlp/download`, writes them beneath the mounted
+`/srv/downloads` directory, and exposes live jobs at `GET /yt-dlp/jobs/`.
+Individual jobs support `GET` and `DELETE` at `/yt-dlp/jobs/:id`.
+
+The browser polls the jobs endpoint every two seconds and shows percentage,
+speed, ETA, destination, completion or failure state, and a cancel action.
+
 ## Run the UI only
 
 ```bash
