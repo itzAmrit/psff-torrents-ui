@@ -1428,19 +1428,20 @@
 
       <details class="intake-disclosure">
         <summary class="intake-summary">
-          <span class="intake-title"><strong>Add torrents</strong><span>Paste magnets or upload `.torrent` files</span></span>
+          <span class="intake-title"><strong>Add downloads</strong><span>Paste magnet or media links, or upload `.torrent` files</span></span>
           <span class="disclosure-chevron">⌄</span>
         </summary>
       <div class="form-grid">
         <div class="field span-8">
-          <label for="magnetInput">Magnet links</label>
-          <textarea id="magnetInput" placeholder="Paste one magnet per line"></textarea>
+          <label for="magnetInput">Magnet or media links</label>
+          <textarea id="magnetInput" placeholder="Paste one magnet or yt-dlp URL per line"></textarea>
         </div>
         <div class="field span-4">
           <label for="torrentFiles">Torrent files</label>
           <input id="torrentFiles" type="file" multiple accept=".torrent,application/x-bittorrent">
           <div style="display:grid; gap:10px; margin-top:12px;">
             <button id="addMagnetButton" type="button">Add magnet links</button>
+            <button id="addYtDlpButton" type="button">Download with yt-dlp</button>
             <button id="uploadButton" type="button">Upload torrent files</button>
           </div>
         </div>
@@ -1571,7 +1572,7 @@
       <div class="modal-card">
         <div class="modal-head">
           <div>
-            <span class="eyebrow">Magnet Intake</span>
+            <span class="eyebrow">Download Intake</span>
             <h2 id="addMagnetTitle">Choose destination before adding</h2>
             <p id="addMagnetMeta">Pick where these torrents should land, and optionally set the top-level name you want qBittorrent to use.</p>
           </div>
@@ -1611,7 +1612,7 @@
                     <button id="addCreateFolderButton" class="secondary" type="button">Create Folder</button>
                   </div>
                 </div>
-                <div class="hint">This chooses the server folder before the magnets are sent to qBittorrent. Exact internal file names are not known until metadata is fetched from peers.</div>
+                <div class="hint">This chooses the server folder before the download is submitted. Torrent file names are not known until metadata is fetched from peers; yt-dlp names media when the download starts.</div>
               </div>
             </div>
           </div>
@@ -1620,7 +1621,7 @@
 
         <div class="entry-shell">
           <div class="entry-section">
-            <h3>Queued Torrent</h3>
+            <h3>Queued Download</h3>
             <div id="addMagnetRows"></div>
           </div>
         </div>
@@ -1667,6 +1668,7 @@
       add: {
         mode: 'magnet',
         magnets: [],
+        ytDlpUrls: [],
         uploads: [],
         currentIndex: 0,
         browserPath: '/downloads',
@@ -1743,6 +1745,7 @@
       magnetInput: document.getElementById('magnetInput'),
       torrentFiles: document.getElementById('torrentFiles'),
       addMagnetButton: document.getElementById('addMagnetButton'),
+      addYtDlpButton: document.getElementById('addYtDlpButton'),
       uploadButton: document.getElementById('uploadButton'),
       actionStatus: document.getElementById('actionStatus'),
       torrentTable: document.getElementById('torrentTable'),
@@ -3378,7 +3381,10 @@
     }
 
     function getPreparedAddEntries() {
-      return state.add.mode === 'upload' ? state.add.uploads : state.add.magnets;
+      if (state.add.mode === 'upload') {
+        return state.add.uploads;
+      }
+      return state.add.mode === 'yt-dlp' ? state.add.ytDlpUrls : state.add.magnets;
     }
 
     function getCurrentPreparedEntry() {
@@ -3393,7 +3399,23 @@
     function renderAddMagnetRows() {
       const entry = getCurrentPreparedEntry();
       if (!entry) {
-        els.addMagnetRows.innerHTML = `<div class="hint">Choose ${state.add.mode === 'upload' ? 'torrent files' : 'magnet links'} first.</div>`;
+        const emptyLabel = state.add.mode === 'upload'
+          ? 'torrent files'
+          : (state.add.mode === 'yt-dlp' ? 'media links' : 'magnet links');
+        els.addMagnetRows.innerHTML = `<div class="hint">Choose ${emptyLabel} first.</div>`;
+        return;
+      }
+
+      if (state.add.mode === 'yt-dlp') {
+        els.addMagnetRows.innerHTML = `
+          <div class="entry-row">
+            <div class="entry-path">
+              <strong>${escapeHtml(entry.originalName)}</strong>
+              <span>yt-dlp media URL</span>
+            </div>
+          </div>
+          <div class="hint">yt-dlp will determine the media title and filename when the download starts.</div>
+        `;
         return;
       }
 
@@ -3467,6 +3489,10 @@
           ? `This upload batch uses the same picker and category flow as magnets. The last chosen folder and category become the defaults for the next torrent in this batch.`
           : 'Choose the destination for this torrent file.';
         els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Upload These Torrents';
+      } else if (state.add.mode === 'yt-dlp') {
+        els.addMagnetTitle.textContent = `Choose destination for download ${currentNumber} of ${total}`;
+        els.addMagnetMeta.textContent = 'Media links use the same destination and category flow as torrents.';
+        els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Start yt-dlp Downloads';
       } else {
         els.addMagnetTitle.textContent = `Choose destination for torrent ${currentNumber} of ${total}`;
         els.addMagnetMeta.textContent = 'Magnets use the same per-torrent destination and category flow as uploaded .torrent files.';
@@ -3498,7 +3524,11 @@
           }
           setStatus(
             els.addMagnetStatus,
-            warning || `Choose the destination folder, then submit the ${state.add.mode === 'upload' ? 'torrent batch' : 'magnets'}.`,
+            warning || `Choose the destination folder, then submit the ${
+              state.add.mode === 'upload'
+                ? 'torrent batch'
+                : (state.add.mode === 'yt-dlp' ? 'yt-dlp downloads' : 'magnets')
+            }.`,
             'ok'
           );
           renderAddMagnetModal();
@@ -3567,11 +3597,13 @@
         setStatus(els.addMagnetStatus, 'Choose a destination first.', 'error');
         return false;
       }
-      try {
-        entry.desiredName = normalizeDesiredTorrentName(entry.desiredName);
-      } catch (error) {
-        setStatus(els.addMagnetStatus, error.message, 'error');
-        return false;
+      if (state.add.mode !== 'yt-dlp') {
+        try {
+          entry.desiredName = normalizeDesiredTorrentName(entry.desiredName);
+        } catch (error) {
+          setStatus(els.addMagnetStatus, error.message, 'error');
+          return false;
+        }
       }
       entry.savePath = destination;
       entry.category = category;
@@ -3599,7 +3631,9 @@
       state.add.browserPath = state.add.selectedLocation;
       setStatus(
         els.addMagnetStatus,
-        `Saved ${currentName} to ${destination}${category ? ` in ${category}` : ''}. Choose destination for torrent ${state.add.currentIndex + 1} of ${entries.length}.`,
+        `Saved ${currentName} to ${destination}${category ? ` in ${category}` : ''}. Choose destination for ${
+          state.add.mode === 'yt-dlp' ? 'download' : 'torrent'
+        } ${state.add.currentIndex + 1} of ${entries.length}.`,
         'ok'
       );
       loadAddBrowserPath(state.add.selectedLocation).catch((error) => {
@@ -3613,14 +3647,20 @@
       els.cancelMagnetButton.disabled = true;
       els.addMagnetCloseButton.disabled = true;
       els.addMagnetButton.disabled = true;
+      els.addYtDlpButton.disabled = true;
 
       try {
         const entries = getPreparedAddEntries();
         if (!entries.length) {
-          setStatus(els.addMagnetStatus, `No ${state.add.mode === 'upload' ? 'torrent files' : 'magnet links'} queued.`, 'error');
+          const queuedLabel = state.add.mode === 'upload'
+            ? 'torrent files'
+            : (state.add.mode === 'yt-dlp' ? 'media links' : 'magnet links');
+          setStatus(els.addMagnetStatus, `No ${queuedLabel} queued.`, 'error');
           return;
         }
-        const missingHash = entries.find((entry) => !String(entry.infoHash || '').trim());
+        const missingHash = state.add.mode !== 'yt-dlp'
+          ? entries.find((entry) => !String(entry.infoHash || '').trim())
+          : null;
         if (missingHash) {
           throw new Error(`Could not determine the torrent hash for ${missingHash.originalName}. The torrent was not added.`);
         }
@@ -3652,6 +3692,30 @@
           state.add.uploads = [];
           closeAddMagnetModal();
           setStatus(els.actionStatus, `Uploaded ${uploadedCount} torrent file(s).`, 'ok');
+        } else if (state.add.mode === 'yt-dlp') {
+          setStatus(els.addMagnetStatus, `Starting ${state.add.ytDlpUrls.length} yt-dlp download(s) with saved destinations...`);
+          for (const entry of state.add.ytDlpUrls) {
+            const body = new URLSearchParams({
+              url: entry.url,
+              savepath: entry.savePath || '/downloads'
+            });
+            const category = String(entry.category || '').trim();
+            if (category) {
+              body.set('category', category);
+            }
+            await api('/api/yt-dlp/download', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+              },
+              body: body.toString()
+            });
+          }
+          els.magnetInput.value = '';
+          const downloadCount = state.add.ytDlpUrls.length;
+          state.add.ytDlpUrls = [];
+          closeAddMagnetModal();
+          setStatus(els.actionStatus, `Started ${downloadCount} yt-dlp download(s).`, 'ok');
         } else {
           setStatus(els.addMagnetStatus, `Adding ${state.add.magnets.length} magnet link(s) with saved destinations and categories...`);
           for (const entry of state.add.magnets) {
@@ -3681,12 +3745,16 @@
         await processPendingTopLevelRenames();
         await syncTorrents({ silent: true });
       } catch (error) {
-        setStatus(els.addMagnetStatus, `Failed to ${state.add.mode === 'upload' ? 'upload torrent files' : 'add magnets'}.\n${error.message}`, 'error');
+        const actionLabel = state.add.mode === 'upload'
+          ? 'upload torrent files'
+          : (state.add.mode === 'yt-dlp' ? 'start yt-dlp downloads' : 'add magnets');
+        setStatus(els.addMagnetStatus, `Failed to ${actionLabel}.\n${error.message}`, 'error');
       } finally {
         els.submitMagnetButton.disabled = false;
         els.cancelMagnetButton.disabled = false;
         els.addMagnetCloseButton.disabled = false;
         els.addMagnetButton.disabled = false;
+        els.addYtDlpButton.disabled = false;
         els.uploadButton.disabled = false;
       }
     }
@@ -3935,6 +4003,41 @@
       await loadAddBrowserPath('/downloads');
     }
 
+    async function addYtDlpDownloads() {
+      const lines = els.magnetInput.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (!lines.length) {
+        setStatus(els.actionStatus, 'Paste at least one media URL.', 'error');
+        return;
+      }
+      const invalidUrl = lines.find((value) => {
+        try {
+          const parsed = new URL(value);
+          return parsed.protocol !== 'http:' && parsed.protocol !== 'https:';
+        } catch (_) {
+          return true;
+        }
+      });
+      if (invalidUrl) {
+        setStatus(els.actionStatus, `yt-dlp needs an HTTP or HTTPS URL.\n${invalidUrl}`, 'error');
+        return;
+      }
+      state.add.mode = 'yt-dlp';
+      state.add.currentIndex = 0;
+      state.add.ytDlpUrls = lines.map((url, index) => ({
+        url,
+        originalName: `Media URL ${index + 1}`,
+        savePath: '',
+        category: ''
+      }));
+      state.add.selectedLocation = '/downloads';
+      state.add.selectedCategory = '';
+      els.addSelectedLocation.value = '/downloads';
+      els.addCustomLocation.value = '/downloads';
+      els.addCategoryInput.value = '';
+      setStatus(els.actionStatus, `Prepared ${lines.length} media link(s). Choose destination and category.`, 'ok');
+      await loadAddBrowserPath('/downloads');
+    }
+
     async function uploadTorrents() {
       const files = Array.from(els.torrentFiles.files || []);
       if (!files.length) {
@@ -4076,6 +4179,7 @@
     els.syncNowButton?.addEventListener('click', triggerGcsSyncNow);
     els.syncDisableButton?.addEventListener('click', disableGcsSync);
     els.addMagnetButton.addEventListener('click', addMagnets);
+    els.addYtDlpButton.addEventListener('click', addYtDlpDownloads);
     els.uploadButton.addEventListener('click', uploadTorrents);
     els.filterState.addEventListener('change', renderTable);
     els.categoryFilter.addEventListener('change', renderTable);
