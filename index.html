@@ -1338,7 +1338,7 @@
         </div>
         <div class="hero-meta">
           <span class="session-pill"><span class="session-dot"></span><span id="sessionState">Not logged in</span></span>
-          <p class="build-stamp">UI build: 2026-07-19 07:49:08 IST</p>
+          <p class="build-stamp">UI build: 2026-08-13 13:06:41 IST</p>
         </div>
       </div>
       <div class="global-stats" aria-label="Global torrent statistics">
@@ -2874,7 +2874,10 @@
     }
 
     async function api(path, options = {}) {
-      const response = await fetch(path, options);
+      const response = await fetch(path, {
+        cache: 'no-store',
+        ...options
+      });
       if (response.status === 403) {
         setLoggedIn(false);
         throw new Error('Session expired. Log in again.');
