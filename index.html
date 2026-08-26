@@ -1240,6 +1240,101 @@
       font-size: 12px;
     }
 
+    .restore-gate {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(83, 226, 209, 0.12), transparent 34%),
+        rgba(2, 10, 16, 0.97);
+      backdrop-filter: blur(14px);
+    }
+
+    .restore-gate.hidden {
+      display: none;
+    }
+
+    .restore-card {
+      width: min(720px, 100%);
+      padding: 28px;
+      border: 1px solid rgba(92, 225, 210, 0.28);
+      border-radius: 18px;
+      background: rgba(7, 20, 29, 0.96);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+    }
+
+    .restore-card h1 {
+      margin: 8px 0;
+      font-size: clamp(24px, 5vw, 38px);
+      letter-spacing: -0.035em;
+    }
+
+    .restore-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .restore-progress {
+      height: 12px;
+      margin: 24px 0 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .restore-progress > span {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #5fe3d1, #45aaf7);
+      transition: width 350ms ease;
+    }
+
+    .restore-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .restore-metric {
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .restore-metric span,
+    .restore-path {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .restore-metric strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 15px;
+    }
+
+    .restore-path {
+      min-height: 38px;
+      margin-top: 18px;
+      overflow-wrap: anywhere;
+    }
+
+    .restore-error {
+      margin-top: 14px;
+      color: #ff8f8f;
+      white-space: pre-wrap;
+    }
+
     @media (max-width: 980px) {
       .global-stats {
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1325,11 +1420,30 @@
       .intake-title span {
         display: none;
       }
+
+      .restore-metrics {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
-  <main class="shell">
+  <section id="restoreGate" class="restore-gate" role="status" aria-live="polite">
+    <div class="restore-card">
+      <span class="eyebrow">Seedbox restoration</span>
+      <h1 id="restoreTitle">Checking GCS restore status</h1>
+      <p id="restoreMessage">Torrent controls remain locked until the bucket has been copied to this VM and verified.</p>
+      <div class="restore-progress" aria-hidden="true"><span id="restoreProgressFill"></span></div>
+      <div class="restore-metrics">
+        <div class="restore-metric"><span>Progress</span><strong id="restorePercent">0.0%</strong></div>
+        <div class="restore-metric"><span>Data restored</span><strong id="restoreBytes">0 B / 0 B</strong></div>
+        <div class="restore-metric"><span>Files verified</span><strong id="restoreFiles">0 / 0</strong></div>
+      </div>
+      <span id="restorePath" class="restore-path">Waiting for the restore worker...</span>
+      <div id="restoreError" class="restore-error hidden"></div>
+    </div>
+  </section>
+  <main id="mainUi" class="shell" inert>
     <section class="panel hero">
       <div class="hero-topline">
         <div class="brand-block">
@@ -1782,6 +1896,8 @@
         poller: null,
         nextDelayMs: 2000,
         torrentSync: {},
+        restoreReady: false,
+        restoreSessionStarted: false,
         samples: [],
         lastRunKey: '',
         queuedRunTimer: null
@@ -1790,6 +1906,16 @@
     };
 
     const els = {
+      restoreGate: document.getElementById('restoreGate'),
+      restoreTitle: document.getElementById('restoreTitle'),
+      restoreMessage: document.getElementById('restoreMessage'),
+      restoreProgressFill: document.getElementById('restoreProgressFill'),
+      restorePercent: document.getElementById('restorePercent'),
+      restoreBytes: document.getElementById('restoreBytes'),
+      restoreFiles: document.getElementById('restoreFiles'),
+      restorePath: document.getElementById('restorePath'),
+      restoreError: document.getElementById('restoreError'),
+      mainUi: document.getElementById('mainUi'),
       sessionState: document.getElementById('sessionState'),
       activeTorrentCount: document.getElementById('activeTorrentCount'),
       globalDownloadSpeed: document.getElementById('globalDownloadSpeed'),
@@ -2287,6 +2413,7 @@
       const progress = runtime?.progress || {};
       state.gcsSync.config = config;
       state.gcsSync.torrentSync = payload?.torrent_sync || {};
+      renderInitialRestoreGate(payload);
       const bucketName = config.bucket_name || '';
       const enabled = Boolean(config.enabled);
       const running = Boolean(runtime.running);
@@ -2414,6 +2541,58 @@
       if (state.torrents.length) {
         renderTable();
       }
+    }
+
+    function renderInitialRestoreGate(payload) {
+      const restore = payload?.restore || {};
+      const runtime = payload?.runtime || {};
+      const progress = runtime?.progress || {};
+      const ready = Boolean(restore.ready || restore.data_ready);
+      const wasReady = state.gcsSync.restoreReady;
+      state.gcsSync.restoreReady = ready;
+
+      els.restoreGate.classList.toggle('hidden', ready);
+      els.mainUi.toggleAttribute('inert', !ready);
+      if (ready) {
+        if (!wasReady && !state.gcsSync.restoreSessionStarted) {
+          state.gcsSync.restoreSessionStarted = true;
+          restoreSession();
+        }
+        return;
+      }
+
+      stopAutoRefresh();
+      const phase = String(restore.phase || progress.phase || 'waiting');
+      const filesDone = Number(progress.files_done || 0);
+      const filesTotal = Number(progress.files_total || 0);
+      const bytesDone = Number(progress.bytes_done || 0);
+      const bytesTotal = Number(progress.bytes_total || 0);
+      const percent = bytesTotal > 0
+        ? Math.max(0, Math.min(100, (bytesDone / bytesTotal) * 100))
+        : (filesTotal > 0 ? Math.max(0, Math.min(100, (filesDone / filesTotal) * 100)) : 0);
+      const phaseLabels = {
+        waiting: 'Waiting for restore worker',
+        restoring: 'Restoring seedbox from GCS',
+        planning: 'Scanning bucket and VM',
+        scanning: 'Comparing bucket and VM',
+        pull: 'Copying GCS data to this VM',
+        transfer: 'Copying GCS data to this VM',
+        checksum: 'Checking file integrity',
+        verifying: 'Verifying restored files',
+        error: 'Restore needs attention'
+      };
+      els.restoreTitle.textContent = phaseLabels[phase] || `Restore: ${phase.replaceAll('-', ' ')}`;
+      els.restoreMessage.textContent = 'qBittorrent, yt-dlp, file operations, and torrent APIs are locked until every bucket object is present on this VM.';
+      els.restoreProgressFill.style.width = `${percent}%`;
+      els.restorePercent.textContent = `${percent.toFixed(1)}%`;
+      els.restoreBytes.textContent = `${formatBytes(bytesDone)} / ${formatBytes(bytesTotal)}`;
+      els.restoreFiles.textContent = `${filesDone} / ${filesTotal}`;
+      els.restorePath.textContent = progress.current_path
+        ? `Current: ${progress.current_path}`
+        : `Stage: ${phase.replaceAll('-', ' ')}`;
+      const error = String(restore.last_error || runtime.last_error || '').trim();
+      els.restoreError.textContent = error;
+      els.restoreError.classList.toggle('hidden', !error);
     }
 
     function getTorrentSyncBadge(torrent) {
@@ -4623,8 +4802,6 @@
 
     loadGcsSyncStatus().catch(() => {});
     scheduleGcsSyncPolling(1000);
-
-    restoreSession();
   </script>
 </body>
 </html>
