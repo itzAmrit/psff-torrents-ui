@@ -2878,12 +2878,21 @@
         cache: 'no-store',
         ...options
       });
-      if (response.status === 403) {
+      if (response.status === 403 && String(path).startsWith('/api/v2/') && !String(path).startsWith('/api/v2/auth/')) {
         setLoggedIn(false);
         throw new Error('Session expired. Log in again.');
       }
       if (!response.ok) {
-        const text = await response.text();
+        let text = '';
+        try {
+          text = (await response.text()).trim();
+          if (text.startsWith('<') && text.includes('<title>')) {
+            const titleMatch = text.match(/<title>(.*?)<\/title>/i);
+            if (titleMatch) {
+              text = titleMatch[1];
+            }
+          }
+        } catch (_) {}
         throw new Error(`HTTP ${response.status}: ${text || 'request failed'}`);
       }
       return response;
