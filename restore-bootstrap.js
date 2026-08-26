@@ -59,6 +59,8 @@
         byId('mainUi').removeAttribute('inert');
         return;
       }
+      byId('restoreGate').classList.remove('hidden');
+      byId('mainUi').setAttribute('inert', '');
     } catch (error) {
       showError(`Unable to check restore status: ${error.message}`);
     }

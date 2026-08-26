@@ -1428,7 +1428,7 @@
   </style>
 </head>
 <body>
-  <section id="restoreGate" class="restore-gate" role="status" aria-live="polite">
+  <section id="restoreGate" class="restore-gate hidden" role="status" aria-live="polite">
     <div class="restore-card">
       <span class="eyebrow">Seedbox restoration</span>
       <h1 id="restoreTitle">Checking GCS restore status</h1>
@@ -1443,7 +1443,7 @@
       <div id="restoreError" class="restore-error hidden"></div>
     </div>
   </section>
-  <main id="mainUi" class="shell" inert>
+  <main id="mainUi" class="shell">
     <section class="panel hero">
       <div class="hero-topline">
         <div class="brand-block">
@@ -1921,6 +1921,8 @@
             document.getElementById('mainUi').removeAttribute('inert');
             return;
           }
+          document.getElementById('restoreGate').classList.remove('hidden');
+          document.getElementById('mainUi').setAttribute('inert', '');
         } catch (error) {
           showBootstrapError(`Unable to check restore status: ${error.message}`);
         }
@@ -2625,6 +2627,12 @@
       const restore = payload?.restore || {};
       const runtime = payload?.runtime || {};
       const progress = runtime?.progress || {};
+      const hasRestoreState = Object.prototype.hasOwnProperty.call(restore, 'ready')
+        || Object.prototype.hasOwnProperty.call(restore, 'data_ready')
+        || Object.prototype.hasOwnProperty.call(restore, 'required');
+      if (!hasRestoreState) {
+        return;
+      }
       const ready = Boolean(restore.ready || restore.data_ready);
       const wasReady = state.gcsSync.restoreReady;
       state.gcsSync.restoreReady = ready;
