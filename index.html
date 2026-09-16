@@ -2600,7 +2600,7 @@
             : (checkpointAge !== null && checkpointAge > 4 ? 'waiting for next gsutil checkpoint' : 'speed warming up'));
         setStatus(els.syncStatus, `Syncing ${bucketName || 'bucket'} now.\n${filesDone}/${filesTotal} files confirmed • ${formatBytes(bytesDone)} confirmed • ${speedLabel}\n${pathLabel}`, '');
       } else if (!bucketName) {
-        setStatus(els.syncStatus, 'No bucket configured yet. Enter a bucket name like psff-bucket-a, then press Save + Enable.', '');
+        setStatus(els.syncStatus, 'No bucket configured yet. Enter a bucket name like psff-bucket-b, then press Save + Enable.', '');
       } else if (runtime.last_result === 'error') {
         const details = runtime.last_error || 'Unknown sync error.';
         setStatus(els.syncStatus, `Last sync failed.\n${details}`, 'error');
