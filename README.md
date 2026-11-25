@@ -21,6 +21,14 @@ downloads at `POST /yt-dlp/download`, writes them beneath the mounted
 `/srv/downloads` directory, and exposes live jobs at `GET /yt-dlp/jobs/`.
 Individual jobs support `GET` and `DELETE` at `/yt-dlp/jobs/:id`.
 
+## transfer.it downloads
+
+The same worker also accepts public transfer.it links at
+`POST /transfer-it/download`. The worker uses transfer.it's MEGA-backed API
+client (including encrypted streaming and optional transfer passwords), writes
+the transfer beneath `/srv/downloads`, and exposes it in the same live jobs
+list and cancellation endpoint as yt-dlp.
+
 The browser polls the jobs endpoint every two seconds and shows percentage,
 speed, ETA, destination, completion or failure state, and a cancel action.
 

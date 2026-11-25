@@ -71,6 +71,17 @@ def validate_url(value):
     return url
 
 
+def validate_transfer_it_url(value):
+    url = validate_url(value)
+    parsed = urlparse(url)
+    if (parsed.hostname or "").lower() not in {"transfer.it", "www.transfer.it"}:
+        raise ValueError("Transfer.it downloads need a transfer.it URL.")
+    path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(path_parts) != 2 or path_parts[0].lower() != "t" or not path_parts[1]:
+        raise ValueError("Transfer.it URL must look like https://transfer.it/t/<handle>.")
+    return url
+
+
 def finish_job(job_id, process, log_handle):
     return_code = process.wait()
     log_handle.close()
@@ -123,6 +134,142 @@ def start_download(url, destination):
         args=(job_id, process, log_handle),
         daemon=True,
     ).start()
+    return job
+
+
+class TransferItCancelled(Exception):
+    pass
+
+
+def _update_transfer_job(job_id, **updates):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if job is not None:
+            job.update(updates)
+
+
+def start_transfer_it_download(url, destination, password):
+    job_id = uuid.uuid4().hex
+    cancel_event = threading.Event()
+    job = {
+        "id": job_id,
+        "kind": "transfer-it",
+        "url": url,
+        "destination": str(destination),
+        "status": "running",
+        "started_at": int(time.time()),
+        "finished_at": None,
+        "return_code": None,
+        "cancel_event": cancel_event,
+        "bytes_done": 0,
+        "bytes_total": 0,
+        "completed_bytes": 0,
+        "current_file": None,
+        "current_file_done": 0,
+        "current_file_total": 0,
+        "download_speed": None,
+        "download_eta": None,
+        "error": None,
+    }
+    with jobs_lock:
+        jobs[job_id] = job
+
+    def run():
+        try:
+            from transferit import Transferit
+
+            def check_cancelled():
+                if cancel_event.is_set():
+                    raise TransferItCancelled("Download cancelled.")
+
+            def on_start(files, total):
+                check_cancelled()
+                _update_transfer_job(
+                    job_id,
+                    bytes_total=int(total or 0),
+                    file_count=len(files),
+                )
+
+            def on_file_start(node, out_path):
+                check_cancelled()
+                _update_transfer_job(
+                    job_id,
+                    current_file=getattr(node, "name", None) or out_path.name,
+                    current_file_done=0,
+                    current_file_total=int(getattr(node, "size", 0) or 0),
+                )
+
+            def on_file_progress(node, done, total):
+                check_cancelled()
+                with jobs_lock:
+                    current = jobs.get(job_id)
+                    if current is None:
+                        return
+                    completed = int(current.get("completed_bytes", 0))
+                    started = int(current.get("started_at", int(time.time())))
+                    bytes_done = completed + int(done or 0)
+                    elapsed = max(0.001, time.time() - started)
+                    speed = bytes_done / elapsed
+                    remaining = max(0, int(total or 0) - int(done or 0))
+                    current.update(
+                        {
+                            "bytes_done": bytes_done,
+                            "current_file_done": int(done or 0),
+                            "current_file_total": int(total or 0),
+                            "download_speed": f"{speed / (1024 * 1024):.2f} MiB/s",
+                            "download_eta": format_eta(remaining / speed) if speed > 0 else None,
+                        }
+                    )
+
+            def on_file_done(node, out_path):
+                check_cancelled()
+                with jobs_lock:
+                    current = jobs.get(job_id)
+                    if current is None:
+                        return
+                    completed = int(current.get("completed_bytes", 0)) + int(
+                        getattr(node, "size", 0) or current.get("current_file_total", 0) or 0
+                    )
+                    current.update(
+                        {
+                            "completed_bytes": completed,
+                            "bytes_done": completed,
+                            "current_file_done": int(current.get("current_file_total", 0)),
+                        }
+                    )
+
+            with Transferit() as client:
+                client.download(
+                    url,
+                    destination,
+                    password=password or None,
+                    on_start=on_start,
+                    on_file_start=on_file_start,
+                    on_file_progress=on_file_progress,
+                    on_file_done=on_file_done,
+                )
+            with jobs_lock:
+                current = jobs.get(job_id)
+                if current is not None:
+                    current["status"] = "completed"
+                    current["bytes_done"] = current.get("bytes_total", current.get("bytes_done", 0))
+                    current["finished_at"] = int(time.time())
+        except TransferItCancelled as error:
+            _update_transfer_job(
+                job_id,
+                status="cancelled",
+                error=str(error),
+                finished_at=int(time.time()),
+            )
+        except Exception as error:  # transfer.it surfaces protocol/network errors here
+            _update_transfer_job(
+                job_id,
+                status="failed",
+                error=str(error),
+                finished_at=int(time.time()),
+            )
+
+    threading.Thread(target=run, daemon=True).start()
     return job
 
 
@@ -253,9 +400,37 @@ def public_job(job):
         savepath = "/downloads" if not relative.parts else f"/downloads/{relative.as_posix()}"
     except ValueError:
         savepath = "/downloads"
-    details = parse_job_log(job)
+    if job.get("kind") == "transfer-it":
+        started = int(job.get("started_at") or 0)
+        finished = int(job.get("finished_at") or time.time())
+        bytes_total = int(job.get("bytes_total") or 0)
+        bytes_done = int(job.get("bytes_done") or 0)
+        elapsed = max(0.001, finished - started) if job.get("status") != "running" else max(0.001, time.time() - started)
+        speed_bytes = bytes_done / elapsed
+        remaining = max(0, bytes_total - bytes_done)
+        details = {
+            "phase": "downloading" if job.get("status") == "running" else job.get("status"),
+            "download_progress": (bytes_done / bytes_total * 100) if bytes_total else 0.0,
+            "download_speed": job.get("download_speed") or (f"{speed_bytes / (1024 * 1024):.2f} MiB/s" if speed_bytes else None),
+            "download_eta": job.get("download_eta") or (format_eta(remaining / speed_bytes) if speed_bytes and remaining else None),
+            "postprocess_progress": None,
+            "postprocess_speed": None,
+            "postprocess_eta": None,
+            "has_postprocess": False,
+            "filename": job.get("current_file"),
+            "error": job.get("error"),
+            "bytes_done": bytes_done,
+            "bytes_total": bytes_total,
+            "file_count": int(job.get("file_count") or 0),
+        }
+        details["progress"] = details["download_progress"]
+        details["speed"] = details["download_speed"]
+        details["eta"] = details["download_eta"]
+    else:
+        details = parse_job_log(job)
     return {
         "id": job["id"],
+        "kind": job.get("kind", "yt-dlp"),
         "url": job["url"],
         "destination": savepath,
         "status": job["status"],
@@ -267,7 +442,7 @@ def public_job(job):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PSFFYtDlp/1.0"
+    server_version = "PSFFDownloadWorker/1.1"
 
     def send_json(self, status, payload):
         body = json.dumps(payload).encode("utf-8")
@@ -294,19 +469,20 @@ class Handler(BaseHTTPRequestHandler):
         return {key: entries[-1] for key, entries in values.items() if entries}
 
     def do_POST(self):
-        if self.path != "/download":
+        if self.path not in {"/download", "/transfer-it/download"}:
             self.send_json(404, {"error": "Not found."})
             return
         try:
             payload = self.read_payload()
-            url = validate_url(payload.get("url"))
+            is_transfer_it = self.path == "/transfer-it/download" or payload.get("kind") == "transfer-it"
+            url = validate_transfer_it_url(payload.get("url")) if is_transfer_it else validate_url(payload.get("url"))
             destination = destination_from_savepath(payload.get("savepath"))
-            job = start_download(url, destination)
+            job = start_transfer_it_download(url, destination, payload.get("password")) if is_transfer_it else start_download(url, destination)
         except (ValueError, json.JSONDecodeError) as error:
             self.send_json(400, {"error": str(error)})
             return
         except OSError as error:
-            self.send_json(500, {"error": f"Could not start yt-dlp: {error}"})
+            self.send_json(500, {"error": f"Could not start download: {error}"})
             return
         self.send_json(
             202,
@@ -345,6 +521,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(404, {"error": "Download job not found."})
                 return
             if process is None or process.poll() is not None:
+                if job.get("kind") == "transfer-it" and job.get("status") == "running":
+                    cancel_event = job.get("cancel_event")
+                    if cancel_event is not None:
+                        cancel_event.set()
+                        job["status"] = "cancelled"
+                        job["finished_at"] = int(time.time())
+                        job["error"] = "Download cancelled."
+                        self.send_json(200, public_job(dict(job)))
+                        return
                 self.send_json(409, {"error": "Download job is no longer running."})
                 return
             job["status"] = "cancelled"

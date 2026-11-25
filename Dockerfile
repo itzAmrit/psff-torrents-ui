@@ -1,6 +1,9 @@
 FROM nginx:alpine
 
-RUN apk add --no-cache ffmpeg python3 yt-dlp
+RUN apk add --no-cache ffmpeg python3 py3-pip yt-dlp \
+    && python3 -m pip install --break-system-packages --no-cache-dir --target /opt/transferit transferit-py==0.1.0rc1
+
+ENV PYTHONPATH=/opt/transferit
 
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY docker-entrypoint.d/10-start-yt-dlp.sh /docker-entrypoint.d/10-start-yt-dlp.sh

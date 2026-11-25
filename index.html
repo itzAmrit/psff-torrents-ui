@@ -1628,13 +1628,13 @@
 
       <details class="intake-disclosure">
         <summary class="intake-summary">
-          <span class="intake-title"><strong>Add downloads</strong><span>Paste magnet or media links, or upload `.torrent` files</span></span>
+          <span class="intake-title"><strong>Add downloads</strong><span>Paste magnet, media, or transfer.it links, or upload `.torrent` files</span></span>
           <span class="disclosure-chevron">⌄</span>
         </summary>
       <div class="form-grid">
         <div class="field span-8">
-          <label for="magnetInput">Magnet or media links</label>
-          <textarea id="magnetInput" placeholder="Paste one magnet or yt-dlp URL per line"></textarea>
+          <label for="magnetInput">Magnet, media, or transfer.it links</label>
+          <textarea id="magnetInput" placeholder="Paste one magnet, yt-dlp URL, or transfer.it link per line"></textarea>
         </div>
         <div class="field span-4">
           <label for="torrentFiles">Torrent files</label>
@@ -1642,6 +1642,9 @@
           <div style="display:grid; gap:10px; margin-top:12px;">
             <button id="addMagnetButton" type="button">Add magnet links</button>
             <button id="addYtDlpButton" type="button">Download with yt-dlp</button>
+            <label for="transferItPassword">Transfer.it password <span>(optional)</span></label>
+            <input id="transferItPassword" type="password" placeholder="Only for protected links" autocomplete="off">
+            <button id="addTransferItButton" type="button">Download from transfer.it</button>
             <button id="uploadButton" type="button">Upload torrent files</button>
           </div>
         </div>
@@ -1652,8 +1655,8 @@
       <section class="yt-dlp-panel" aria-labelledby="ytDlpJobsTitle">
         <div class="yt-dlp-head">
           <div>
-            <h3 id="ytDlpJobsTitle">yt-dlp downloads</h3>
-            <p>Live progress for downloads started from this server.</p>
+            <h3 id="ytDlpJobsTitle">Server downloads</h3>
+            <p>Live progress for yt-dlp and transfer.it downloads started from this server.</p>
           </div>
           <button id="refreshYtDlpJobsButton" class="secondary" type="button">Refresh downloads</button>
         </div>
@@ -1962,6 +1965,8 @@
         mode: 'magnet',
         magnets: [],
         ytDlpUrls: [],
+        transferItUrls: [],
+        transferItPassword: '',
         uploads: [],
         currentIndex: 0,
         browserPath: '/downloads',
@@ -2054,6 +2059,8 @@
       torrentFiles: document.getElementById('torrentFiles'),
       addMagnetButton: document.getElementById('addMagnetButton'),
       addYtDlpButton: document.getElementById('addYtDlpButton'),
+      addTransferItButton: document.getElementById('addTransferItButton'),
+      transferItPassword: document.getElementById('transferItPassword'),
       uploadButton: document.getElementById('uploadButton'),
       actionStatus: document.getElementById('actionStatus'),
       ytDlpJobs: document.getElementById('ytDlpJobs'),
@@ -2830,6 +2837,11 @@
       }
     }
 
+    function serverDownloadLabel(job) {
+      const label = ytDlpJobLabel(job);
+      return job.kind === 'transfer-it' ? `transfer.it • ${label}` : `yt-dlp • ${label}`;
+    }
+
     function renderYtDlpJobs() {
       if (!els.ytDlpJobs) {
         return;
@@ -2861,7 +2873,7 @@
           <article class="yt-dlp-job">
             <div class="yt-dlp-job-head">
               <div class="yt-dlp-job-title">
-                <strong>${escapeHtml(ytDlpJobLabel(job))}</strong>
+                <strong>${escapeHtml(serverDownloadLabel(job))}</strong>
                 <span>${escapeHtml(job.destination || '/downloads')} • started ${escapeHtml(startedAt)}</span>
               </div>
               <div class="compact-row">
@@ -3888,7 +3900,13 @@
       if (state.add.mode === 'upload') {
         return state.add.uploads;
       }
-      return state.add.mode === 'yt-dlp' ? state.add.ytDlpUrls : state.add.magnets;
+      if (state.add.mode === 'yt-dlp') {
+        return state.add.ytDlpUrls;
+      }
+      if (state.add.mode === 'transfer-it') {
+        return state.add.transferItUrls;
+      }
+      return state.add.magnets;
     }
 
     function getCurrentPreparedEntry() {
@@ -3905,7 +3923,9 @@
       if (!entry) {
         const emptyLabel = state.add.mode === 'upload'
           ? 'torrent files'
-          : (state.add.mode === 'yt-dlp' ? 'media links' : 'magnet links');
+          : (state.add.mode === 'yt-dlp'
+            ? 'media links'
+            : (state.add.mode === 'transfer-it' ? 'transfer.it links' : 'magnet links'));
         els.addMagnetRows.innerHTML = `<div class="hint">Choose ${emptyLabel} first.</div>`;
         return;
       }
@@ -3919,6 +3939,19 @@
             </div>
           </div>
           <div class="hint">yt-dlp will determine the media title and filename when the download starts.</div>
+        `;
+        return;
+      }
+
+      if (state.add.mode === 'transfer-it') {
+        els.addMagnetRows.innerHTML = `
+          <div class="entry-row">
+            <div class="entry-path">
+              <strong>${escapeHtml(entry.originalName)}</strong>
+              <span>transfer.it download</span>
+            </div>
+          </div>
+          <div class="hint">The transfer.it worker will recreate any folders in the transfer beneath the destination you choose.</div>
         `;
         return;
       }
@@ -3997,6 +4030,10 @@
         els.addMagnetTitle.textContent = `Choose destination for download ${currentNumber} of ${total}`;
         els.addMagnetMeta.textContent = 'Media links use the same destination and category flow as torrents.';
         els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Start yt-dlp Downloads';
+      } else if (state.add.mode === 'transfer-it') {
+        els.addMagnetTitle.textContent = `Choose destination for transfer.it download ${currentNumber} of ${total}`;
+        els.addMagnetMeta.textContent = 'Transfer.it links use the same destination and category flow as torrents.';
+        els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Start transfer.it Downloads';
       } else {
         els.addMagnetTitle.textContent = `Choose destination for torrent ${currentNumber} of ${total}`;
         els.addMagnetMeta.textContent = 'Magnets use the same per-torrent destination and category flow as uploaded .torrent files.';
@@ -4031,7 +4068,9 @@
             warning || `Choose the destination folder, then submit the ${
               state.add.mode === 'upload'
                 ? 'torrent batch'
-                : (state.add.mode === 'yt-dlp' ? 'yt-dlp downloads' : 'magnets')
+                : (state.add.mode === 'yt-dlp'
+                  ? 'yt-dlp downloads'
+                  : (state.add.mode === 'transfer-it' ? 'transfer.it downloads' : 'magnets'))
             }.`,
             'ok'
           );
@@ -4087,6 +4126,10 @@
       state.add.mode = 'magnet';
       state.add.currentIndex = 0;
       state.add.selectedCategory = '';
+      state.add.transferItPassword = '';
+      if (els.transferItPassword) {
+        els.transferItPassword.value = '';
+      }
       els.addMagnetModal.classList.add('hidden');
     }
 
@@ -4101,7 +4144,7 @@
         setStatus(els.addMagnetStatus, 'Choose a destination first.', 'error');
         return false;
       }
-      if (state.add.mode !== 'yt-dlp') {
+      if (state.add.mode !== 'yt-dlp' && state.add.mode !== 'transfer-it') {
         try {
           entry.desiredName = normalizeDesiredTorrentName(entry.desiredName);
         } catch (error) {
@@ -4136,7 +4179,9 @@
       setStatus(
         els.addMagnetStatus,
         `Saved ${currentName} to ${destination}${category ? ` in ${category}` : ''}. Choose destination for ${
-          state.add.mode === 'yt-dlp' ? 'download' : 'torrent'
+          state.add.mode === 'yt-dlp'
+            ? 'download'
+            : (state.add.mode === 'transfer-it' ? 'transfer.it download' : 'torrent')
         } ${state.add.currentIndex + 1} of ${entries.length}.`,
         'ok'
       );
@@ -4152,17 +4197,20 @@
       els.addMagnetCloseButton.disabled = true;
       els.addMagnetButton.disabled = true;
       els.addYtDlpButton.disabled = true;
+      els.addTransferItButton.disabled = true;
 
       try {
         const entries = getPreparedAddEntries();
         if (!entries.length) {
           const queuedLabel = state.add.mode === 'upload'
             ? 'torrent files'
-            : (state.add.mode === 'yt-dlp' ? 'media links' : 'magnet links');
+            : (state.add.mode === 'yt-dlp'
+              ? 'media links'
+              : (state.add.mode === 'transfer-it' ? 'transfer.it links' : 'magnet links'));
           setStatus(els.addMagnetStatus, `No ${queuedLabel} queued.`, 'error');
           return;
         }
-        const missingHash = state.add.mode !== 'yt-dlp'
+        const missingHash = state.add.mode !== 'yt-dlp' && state.add.mode !== 'transfer-it'
           ? entries.find((entry) => !String(entry.infoHash || '').trim())
           : null;
         if (missingHash) {
@@ -4196,18 +4244,25 @@
           state.add.uploads = [];
           closeAddMagnetModal();
           setStatus(els.actionStatus, `Uploaded ${uploadedCount} torrent file(s).`, 'ok');
-        } else if (state.add.mode === 'yt-dlp') {
-          setStatus(els.addMagnetStatus, `Starting ${state.add.ytDlpUrls.length} yt-dlp download(s) with saved destinations...`);
-          for (const entry of state.add.ytDlpUrls) {
+        } else if (state.add.mode === 'yt-dlp' || state.add.mode === 'transfer-it') {
+          const isTransferIt = state.add.mode === 'transfer-it';
+          const endpoint = isTransferIt ? '/transfer-it/download' : '/yt-dlp/download';
+          const label = isTransferIt ? 'transfer.it' : 'yt-dlp';
+          const downloadEntries = isTransferIt ? state.add.transferItUrls : state.add.ytDlpUrls;
+          setStatus(els.addMagnetStatus, `Starting ${downloadEntries.length} ${label} download(s) with saved destinations...`);
+          for (const entry of downloadEntries) {
             const body = new URLSearchParams({
               url: entry.url,
               savepath: entry.savePath || '/downloads'
             });
+            if (isTransferIt && state.add.transferItPassword) {
+              body.set('password', state.add.transferItPassword);
+            }
             const category = String(entry.category || '').trim();
             if (category) {
               body.set('category', category);
             }
-            await api('/yt-dlp/download', {
+            await api(endpoint, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
@@ -4216,10 +4271,16 @@
             });
           }
           els.magnetInput.value = '';
-          const downloadCount = state.add.ytDlpUrls.length;
-          state.add.ytDlpUrls = [];
+          const downloadCount = downloadEntries.length;
+          if (isTransferIt) {
+            state.add.transferItUrls = [];
+            state.add.transferItPassword = '';
+            els.transferItPassword.value = '';
+          } else {
+            state.add.ytDlpUrls = [];
+          }
           closeAddMagnetModal();
-          setStatus(els.actionStatus, `Started ${downloadCount} yt-dlp download(s).`, 'ok');
+          setStatus(els.actionStatus, `Started ${downloadCount} ${label} download(s).`, 'ok');
           await syncYtDlpJobs();
         } else {
           setStatus(els.addMagnetStatus, `Adding ${state.add.magnets.length} magnet link(s) with saved destinations and categories...`);
@@ -4252,7 +4313,9 @@
       } catch (error) {
         const actionLabel = state.add.mode === 'upload'
           ? 'upload torrent files'
-          : (state.add.mode === 'yt-dlp' ? 'start yt-dlp downloads' : 'add magnets');
+          : (state.add.mode === 'yt-dlp'
+            ? 'start yt-dlp downloads'
+            : (state.add.mode === 'transfer-it' ? 'start transfer.it downloads' : 'add magnets'));
         setStatus(els.addMagnetStatus, `Failed to ${actionLabel}.\n${error.message}`, 'error');
       } finally {
         els.submitMagnetButton.disabled = false;
@@ -4260,6 +4323,7 @@
         els.addMagnetCloseButton.disabled = false;
         els.addMagnetButton.disabled = false;
         els.addYtDlpButton.disabled = false;
+        els.addTransferItButton.disabled = false;
         els.uploadButton.disabled = false;
       }
     }
@@ -4543,6 +4607,48 @@
       await loadAddBrowserPath('/downloads');
     }
 
+    async function addTransferItDownloads() {
+      const lines = els.magnetInput.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (!lines.length) {
+        setStatus(els.actionStatus, 'Paste at least one transfer.it link.', 'error');
+        return;
+      }
+      const invalidUrl = lines.find((value) => {
+        try {
+          const parsed = new URL(value);
+          const host = String(parsed.hostname || '').toLowerCase();
+          const segments = parsed.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+          return (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+            || !['transfer.it', 'www.transfer.it'].includes(host)
+            || segments.length !== 2
+            || segments[0] !== 't'
+            || !segments[1];
+        } catch (_) {
+          return true;
+        }
+      });
+      if (invalidUrl) {
+        setStatus(els.actionStatus, `Transfer.it links must look like https://transfer.it/t/<handle>.\n${invalidUrl}`, 'error');
+        return;
+      }
+      state.add.mode = 'transfer-it';
+      state.add.currentIndex = 0;
+      state.add.transferItPassword = String(els.transferItPassword.value || '').trim();
+      state.add.transferItUrls = lines.map((url, index) => ({
+        url,
+        originalName: `Transfer.it link ${index + 1}`,
+        savePath: '',
+        category: ''
+      }));
+      state.add.selectedLocation = '/downloads';
+      state.add.selectedCategory = '';
+      els.addSelectedLocation.value = '/downloads';
+      els.addCustomLocation.value = '/downloads';
+      els.addCategoryInput.value = '';
+      setStatus(els.actionStatus, `Prepared ${lines.length} transfer.it download(s). Choose destination and category.`, 'ok');
+      await loadAddBrowserPath('/downloads');
+    }
+
     async function uploadTorrents() {
       const files = Array.from(els.torrentFiles.files || []);
       if (!files.length) {
@@ -4685,6 +4791,7 @@
     els.syncDisableButton?.addEventListener('click', disableGcsSync);
     els.addMagnetButton.addEventListener('click', addMagnets);
     els.addYtDlpButton.addEventListener('click', addYtDlpDownloads);
+    els.addTransferItButton.addEventListener('click', addTransferItDownloads);
     els.uploadButton.addEventListener('click', uploadTorrents);
     els.refreshYtDlpJobsButton.addEventListener('click', () => {
       syncYtDlpJobs().catch(() => {});
