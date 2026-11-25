@@ -70,7 +70,7 @@ docker compose -f docker-compose.example.yml up --build -d
 The production UI is packaged as its own Docker image:
 
 ```bash
-us-central1-docker.pkg.dev/psff-cloud-run-496515/psff-images/psff-torrents-ui:<tag>
+europe-west1-docker.pkg.dev/images-512519/psff-images/psff-torrents-ui:<tag>
 ```
 
 The container serves static assets on port `80`. On the VM, nginx stays responsible for exposing `/`, `/api/`, `/api/gcs-sync/`, and `/__downloads__/`.

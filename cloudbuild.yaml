@@ -15,7 +15,7 @@ steps:
       - |
         COMMIT_SHA_SAFE="$COMMIT_SHA"
         SHORT_SHA_SAFE="$SHORT_SHA"
-        IMAGE_REPO="us-central1-docker.pkg.dev/$PROJECT_ID/psff-images/psff-torrents-ui"
+        IMAGE_REPO="europe-west1-docker.pkg.dev/$PROJECT_ID/psff-images/psff-torrents-ui"
         printf 'COMMIT_SHA_SAFE=%s\nSHORT_SHA_SAFE=%s\nIMAGE_SHA_TAG=sha-%s\nIMAGE_REPO=%s\n' \
           "$${COMMIT_SHA_SAFE}" "$${SHORT_SHA_SAFE}" "$${SHORT_SHA_SAFE}" "$${IMAGE_REPO}" > /workspace/.cloudbuild.env
 
