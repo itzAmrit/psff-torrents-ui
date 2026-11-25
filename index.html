@@ -1656,7 +1656,7 @@
         <div class="yt-dlp-head">
           <div>
             <h3 id="ytDlpJobsTitle">Server downloads</h3>
-            <p>Live progress for yt-dlp and transfer.it downloads started from this server.</p>
+            <p>Live progress for yt-dlp and transfer.it downloads. Transfer.it files are synced to the selected bucket-backed folder, then removed from the VM.</p>
           </div>
           <button id="refreshYtDlpJobsButton" class="secondary" type="button">Refresh downloads</button>
         </div>
@@ -2856,6 +2856,8 @@
         const phase = String(job.phase || (status === 'running' ? 'downloading' : status));
         const statusLabel = phase === 'postprocessing'
           ? 'Post-processing'
+          : phase === 'syncing'
+            ? 'Syncing to GCP'
           : status.charAt(0).toUpperCase() + status.slice(1);
         const downloadProgress = Math.max(0, Math.min(100, Number(job.download_progress ?? job.progress ?? 0)));
         const postprocessProgress = job.postprocess_progress == null
@@ -2890,6 +2892,7 @@
             <div class="yt-dlp-progress" aria-label="Download ${downloadProgress.toFixed(1)}% complete">
               <span style="width:${downloadProgress}%"></span>
             </div>
+            ${phase === 'syncing' ? '<div class="yt-dlp-job-meta"><span>Bucket cleanup</span><span>Waiting for successful GCP sync before removing VM files</span></div>' : ''}
             ${showPostprocess ? `
               <div class="yt-dlp-job-meta">
                 <span>Post-processing</span>
@@ -4032,7 +4035,7 @@
         els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Start yt-dlp Downloads';
       } else if (state.add.mode === 'transfer-it') {
         els.addMagnetTitle.textContent = `Choose destination for transfer.it download ${currentNumber} of ${total}`;
-        els.addMagnetMeta.textContent = 'Transfer.it links use the same destination and category flow as torrents.';
+        els.addMagnetMeta.textContent = 'Choose the bucket-backed folder. After a successful sync, temporary VM files are removed.';
         els.submitMagnetButton.textContent = currentNumber < total ? 'Save And Continue' : 'Start transfer.it Downloads';
       } else {
         els.addMagnetTitle.textContent = `Choose destination for torrent ${currentNumber} of ${total}`;

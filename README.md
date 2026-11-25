@@ -26,8 +26,11 @@ Individual jobs support `GET` and `DELETE` at `/yt-dlp/jobs/:id`.
 The same worker also accepts public transfer.it links at
 `POST /transfer-it/download`. The worker uses transfer.it's MEGA-backed API
 client (including encrypted streaming and optional transfer passwords), writes
-the transfer beneath `/srv/downloads`, and exposes it in the same live jobs
-list and cancellation endpoint as yt-dlp.
+the transfer temporarily beneath `/srv/downloads`, requests a bucket sync from
+the local sync agent, and removes only the successfully synced files. If the
+bucket sync is disabled or fails, the files are kept on the VM and the job is
+marked failed for manual recovery. The destination picker still chooses the
+folder inside the bucket-backed `/downloads` tree.
 
 The browser polls the jobs endpoint every two seconds and shows percentage,
 speed, ETA, destination, completion or failure state, and a cancel action.

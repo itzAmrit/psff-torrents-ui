@@ -10,13 +10,17 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urlparse
+from urllib.request import Request, urlopen
 
 
 DOWNLOAD_ROOT = Path(os.environ.get("YT_DLP_DOWNLOAD_ROOT", "/srv/downloads")).resolve()
 LISTEN_HOST = os.environ.get("YT_DLP_LISTEN_HOST", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("YT_DLP_LISTEN_PORT", "8090"))
 MAX_BODY_BYTES = 64 * 1024
+SYNC_AGENT_URL = os.environ.get("TSFF_SYNC_AGENT_URL", "http://torrents-sync-agent:9099").rstrip("/")
+SYNC_WAIT_SECONDS = int(os.environ.get("TRANSFER_IT_SYNC_WAIT_SECONDS", "7200"))
 jobs = {}
 processes = {}
 jobs_lock = threading.Lock()
@@ -141,6 +145,100 @@ class TransferItCancelled(Exception):
     pass
 
 
+def sync_agent_request(path, method="GET"):
+    request = Request(
+        f"{SYNC_AGENT_URL}{path}",
+        method=method,
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        data=b"{}" if method != "GET" else None,
+    )
+    with urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event):
+    """Require a successful bucket sync before deleting transfer.it files."""
+    _update_transfer_job(job_id, phase="syncing", sync_status="starting")
+    try:
+        before = sync_agent_request("/api/gcs-sync/status")
+        before_runtime = before.get("runtime") or {}
+        baseline_finished = str(before_runtime.get("last_finished_at") or "")
+        baseline_started = str(before_runtime.get("last_started_at") or "")
+        started = sync_agent_request("/api/gcs-sync/run", method="POST")
+    except (HTTPError, URLError, OSError, ValueError) as error:
+        raise RuntimeError(f"Could not start bucket sync; files were kept on the VM: {error}") from error
+
+    started_at = time.time()
+    deadline = started_at + max(60, SYNC_WAIT_SECONDS)
+    last_run_started = ""
+    while time.time() < deadline:
+        if cancel_event.is_set():
+            raise TransferItCancelled("Download cancelled while waiting for bucket sync.")
+        try:
+            status = sync_agent_request("/api/gcs-sync/status")
+        except (HTTPError, URLError, OSError, ValueError) as error:
+            raise RuntimeError(f"Could not check bucket sync; files were kept on the VM: {error}") from error
+        runtime = status.get("runtime") or {}
+        config = status.get("config") or {}
+        if not config.get("enabled") or not str(config.get("bucket_name") or "").strip():
+            raise RuntimeError("Bucket sync is not enabled; files were kept on the VM.")
+        last_run_started = str(runtime.get("last_started_at") or last_run_started)
+        if runtime.get("running"):
+            _update_transfer_job(job_id, sync_status="syncing")
+            time.sleep(2)
+            continue
+        if runtime.get("last_result") == "error":
+            detail = str(runtime.get("last_error") or "unknown bucket sync error")
+            raise RuntimeError(f"Bucket sync failed; files were kept on the VM: {detail}")
+        last_finished = str(runtime.get("last_finished_at") or "")
+        run_changed = (
+            (last_finished and last_finished != baseline_finished)
+            or (last_run_started and last_run_started != baseline_started)
+        )
+        if runtime.get("last_result") == "ok" and run_changed:
+            if started.get("started"):
+                break
+            # The first request was queued behind an older run. Start a new
+            # run now that the older one has finished, so it definitely sees
+            # the files this transfer just created.
+            baseline_finished = last_finished
+            baseline_started = last_run_started
+            started = sync_agent_request("/api/gcs-sync/run", method="POST")
+            _update_transfer_job(job_id, sync_status="syncing")
+            time.sleep(2)
+            continue
+        # If another sync was already running when we requested one, make a
+        # second request after it finishes so this transfer is definitely in
+        # the completed run rather than merely an older successful run.
+        if not started.get("started"):
+            started = sync_agent_request("/api/gcs-sync/run", method="POST")
+        _update_transfer_job(job_id, sync_status="waiting")
+        time.sleep(2)
+    else:
+        raise RuntimeError("Bucket sync did not finish before the timeout; files were kept on the VM.")
+
+    removed = 0
+    for raw_path in completed_paths:
+        path = Path(raw_path).resolve()
+        try:
+            path.relative_to(destination.resolve())
+        except ValueError as error:
+            raise RuntimeError("Refusing to remove a transfer path outside its destination.") from error
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+            removed += 1
+    for raw_path in sorted(completed_paths, key=lambda value: len(str(value)), reverse=True):
+        current = Path(raw_path).resolve().parent
+        root = destination.resolve()
+        while current != root:
+            try:
+                current.rmdir()
+            except OSError:
+                break
+            current = current.parent
+    _update_transfer_job(job_id, sync_status="synced_and_removed", removed_files=removed)
+
+
 def _update_transfer_job(job_id, **updates):
     with jobs_lock:
         job = jobs.get(job_id)
@@ -170,6 +268,10 @@ def start_transfer_it_download(url, destination, password):
         "download_speed": None,
         "download_eta": None,
         "error": None,
+        "phase": "downloading",
+        "sync_status": None,
+        "removed_files": 0,
+        "file_count": 0,
     }
     with jobs_lock:
         jobs[job_id] = job
@@ -177,6 +279,7 @@ def start_transfer_it_download(url, destination, password):
     def run():
         try:
             from transferit import Transferit
+            completed_paths = []
 
             def check_cancelled():
                 if cancel_event.is_set():
@@ -237,6 +340,7 @@ def start_transfer_it_download(url, destination, password):
                             "current_file_done": int(current.get("current_file_total", 0)),
                         }
                     )
+                completed_paths.append(str(out_path))
 
             with Transferit() as client:
                 client.download(
@@ -248,16 +352,19 @@ def start_transfer_it_download(url, destination, password):
                     on_file_progress=on_file_progress,
                     on_file_done=on_file_done,
                 )
+            wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event)
             with jobs_lock:
                 current = jobs.get(job_id)
                 if current is not None:
                     current["status"] = "completed"
+                    current["phase"] = "completed"
                     current["bytes_done"] = current.get("bytes_total", current.get("bytes_done", 0))
                     current["finished_at"] = int(time.time())
         except TransferItCancelled as error:
             _update_transfer_job(
                 job_id,
                 status="cancelled",
+                phase="cancelled",
                 error=str(error),
                 finished_at=int(time.time()),
             )
@@ -265,6 +372,7 @@ def start_transfer_it_download(url, destination, password):
             _update_transfer_job(
                 job_id,
                 status="failed",
+                phase="failed",
                 error=str(error),
                 finished_at=int(time.time()),
             )
@@ -409,7 +517,7 @@ def public_job(job):
         speed_bytes = bytes_done / elapsed
         remaining = max(0, bytes_total - bytes_done)
         details = {
-            "phase": "downloading" if job.get("status") == "running" else job.get("status"),
+            "phase": job.get("phase") or ("downloading" if job.get("status") == "running" else job.get("status")),
             "download_progress": (bytes_done / bytes_total * 100) if bytes_total else 0.0,
             "download_speed": job.get("download_speed") or (f"{speed_bytes / (1024 * 1024):.2f} MiB/s" if speed_bytes else None),
             "download_eta": job.get("download_eta") or (format_eta(remaining / speed_bytes) if speed_bytes and remaining else None),
@@ -422,6 +530,8 @@ def public_job(job):
             "bytes_done": bytes_done,
             "bytes_total": bytes_total,
             "file_count": int(job.get("file_count") or 0),
+            "sync_status": job.get("sync_status"),
+            "removed_files": int(job.get("removed_files") or 0),
         }
         details["progress"] = details["download_progress"]
         details["speed"] = details["download_speed"]
