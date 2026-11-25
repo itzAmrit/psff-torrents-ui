@@ -29,7 +29,7 @@ steps:
         ACCESS_TOKEN="$(gcloud auth print-access-token)"
         AUTH_VALUE="$(printf 'oauth2accesstoken:%s' "$${ACCESS_TOKEN}" | base64 | tr -d '\n')"
         cat > /workspace/.docker/config.json <<EOF
-        {"auths":{"us-central1-docker.pkg.dev":{"auth":"$${AUTH_VALUE}"}}}
+        {"auths":{"europe-west1-docker.pkg.dev":{"auth":"$${AUTH_VALUE}"},"us-central1-docker.pkg.dev":{"auth":"$${AUTH_VALUE}"}}}
         EOF
         chmod 600 /workspace/.docker/config.json
 
