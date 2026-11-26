@@ -150,12 +150,13 @@ class TransferItCancelled(Exception):
     pass
 
 
-def sync_agent_request(path, method="GET"):
+def sync_agent_request(path, method="GET", payload=None):
+    data = None if method == "GET" else json.dumps(payload or {}).encode("utf-8")
     request = Request(
         f"{SYNC_AGENT_URL}{path}",
         method=method,
         headers={"Accept": "application/json", "Content-Type": "application/json"},
-        data=b"{}" if method != "GET" else None,
+        data=data,
     )
     with urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -177,7 +178,11 @@ def wait_for_sync_and_cleanup(
         before_runtime = before.get("runtime") or {}
         baseline_finished = str(before_runtime.get("last_finished_at") or "")
         baseline_started = str(before_runtime.get("last_started_at") or "")
-        started = sync_agent_request("/api/gcs-sync/run", method="POST")
+        started = sync_agent_request(
+            "/api/gcs-sync/run",
+            method="POST",
+            payload={"scope": "downloads"},
+        )
     except (HTTPError, URLError, OSError, ValueError) as error:
         raise RuntimeError(f"Could not start bucket sync; files were kept on the VM: {error}") from error
 
@@ -222,7 +227,11 @@ def wait_for_sync_and_cleanup(
             # the files this transfer just created.
             baseline_finished = last_finished
             baseline_started = last_run_started
-            started = sync_agent_request("/api/gcs-sync/run", method="POST")
+            started = sync_agent_request(
+                "/api/gcs-sync/run",
+                method="POST",
+                payload={"scope": "downloads"},
+            )
             _update_transfer_job(job_id, sync_status="syncing")
             time.sleep(SYNC_POLL_SECONDS)
             continue
@@ -232,7 +241,11 @@ def wait_for_sync_and_cleanup(
         # second request after it finishes so this transfer is definitely in
         # the completed run rather than merely an older successful run.
         if not started.get("started"):
-            started = sync_agent_request("/api/gcs-sync/run", method="POST")
+            started = sync_agent_request(
+                "/api/gcs-sync/run",
+                method="POST",
+                payload={"scope": "downloads"},
+            )
         _update_transfer_job(job_id, sync_status="waiting")
         time.sleep(SYNC_POLL_SECONDS)
     else:
