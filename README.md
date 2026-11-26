@@ -29,8 +29,11 @@ client (including encrypted streaming and optional transfer passwords), writes
 the transfer temporarily beneath `/srv/downloads`, requests a bucket sync from
 the local sync agent, and removes only the successfully synced files. If the
 bucket sync is disabled or fails, the files are kept on the VM and the job is
-marked failed for manual recovery. The destination picker still chooses the
-folder inside the bucket-backed `/downloads` tree.
+marked failed for manual recovery. If a healthy sync simply takes longer than
+the foreground wait, the job remains in `syncing` and continues monitoring in
+the background; it is only marked complete after remote verification and VM
+cleanup. The destination picker still chooses the folder inside the
+bucket-backed `/downloads` tree.
 
 The browser polls the jobs endpoint every two seconds and shows percentage,
 speed, ETA, destination, completion or failure state, and a cancel action.

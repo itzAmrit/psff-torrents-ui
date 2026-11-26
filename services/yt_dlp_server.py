@@ -21,6 +21,11 @@ LISTEN_PORT = int(os.environ.get("YT_DLP_LISTEN_PORT", "8090"))
 MAX_BODY_BYTES = 64 * 1024
 SYNC_AGENT_URL = os.environ.get("TSFF_SYNC_AGENT_URL", "http://torrents-sync-agent:9099").rstrip("/")
 SYNC_WAIT_SECONDS = int(os.environ.get("TRANSFER_IT_SYNC_WAIT_SECONDS", "7200"))
+SYNC_BACKGROUND_WAIT_SECONDS = max(
+    SYNC_WAIT_SECONDS,
+    int(os.environ.get("TRANSFER_IT_SYNC_BACKGROUND_WAIT_SECONDS", "86400")),
+)
+SYNC_POLL_SECONDS = max(2, int(os.environ.get("TRANSFER_IT_SYNC_POLL_SECONDS", "2")))
 jobs = {}
 processes = {}
 jobs_lock = threading.Lock()
@@ -156,7 +161,15 @@ def sync_agent_request(path, method="GET"):
         return json.loads(response.read().decode("utf-8"))
 
 
-def wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event):
+def wait_for_sync_and_cleanup(
+    job_id,
+    completed_paths,
+    destination,
+    cancel_event,
+    *,
+    wait_seconds=None,
+    allow_background=True,
+):
     """Require a successful bucket sync before deleting transfer.it files."""
     _update_transfer_job(job_id, phase="syncing", sync_status="starting")
     try:
@@ -169,7 +182,7 @@ def wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event
         raise RuntimeError(f"Could not start bucket sync; files were kept on the VM: {error}") from error
 
     started_at = time.time()
-    deadline = started_at + max(60, SYNC_WAIT_SECONDS)
+    deadline = started_at + max(60, wait_seconds or SYNC_WAIT_SECONDS)
     last_run_started = ""
     while time.time() < deadline:
         if cancel_event.is_set():
@@ -185,7 +198,7 @@ def wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event
         last_run_started = str(runtime.get("last_started_at") or last_run_started)
         if runtime.get("running"):
             _update_transfer_job(job_id, sync_status="syncing")
-            time.sleep(2)
+            time.sleep(SYNC_POLL_SECONDS)
             continue
         if runtime.get("last_result") == "error":
             detail = str(runtime.get("last_error") or "unknown bucket sync error")
@@ -195,7 +208,13 @@ def wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event
             (last_finished and last_finished != baseline_finished)
             or (last_run_started and last_run_started != baseline_started)
         )
-        if runtime.get("last_result") == "ok" and run_changed:
+        sync_stats = runtime.get("last_stats") or {}
+        download_stats = sync_stats.get("downloads") or {}
+        sync_verified = (
+            int(download_stats.get("missing_remote") or 0) == 0
+            and int(download_stats.get("mismatched") or 0) == 0
+        )
+        if runtime.get("last_result") == "ok" and run_changed and sync_verified:
             if started.get("started"):
                 break
             # The first request was queued behind an older run. Start a new
@@ -205,16 +224,36 @@ def wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event
             baseline_started = last_run_started
             started = sync_agent_request("/api/gcs-sync/run", method="POST")
             _update_transfer_job(job_id, sync_status="syncing")
-            time.sleep(2)
+            time.sleep(SYNC_POLL_SECONDS)
             continue
+        if runtime.get("last_result") == "ok" and run_changed and not sync_verified:
+            raise RuntimeError("Bucket sync completed without verifying every download object; files were kept on the VM.")
         # If another sync was already running when we requested one, make a
         # second request after it finishes so this transfer is definitely in
         # the completed run rather than merely an older successful run.
         if not started.get("started"):
             started = sync_agent_request("/api/gcs-sync/run", method="POST")
         _update_transfer_job(job_id, sync_status="waiting")
-        time.sleep(2)
+        time.sleep(SYNC_POLL_SECONDS)
     else:
+        if allow_background:
+            # A large transfer can outlive the foreground wait even though the
+            # sync agent is healthy and will finish on its next scheduled run.
+            # Keep the job in syncing state and continue monitoring rather than
+            # recording a permanent false failure.
+            _update_transfer_job(
+                job_id,
+                phase="syncing",
+                sync_status="waiting",
+                error=None,
+                sync_waiting_since=int(time.time()),
+            )
+            threading.Thread(
+                target=continue_sync_wait,
+                args=(job_id, completed_paths, destination, cancel_event),
+                daemon=True,
+            ).start()
+            return False
         raise RuntimeError("Bucket sync did not finish before the timeout; files were kept on the VM.")
 
     removed = 0
@@ -237,6 +276,46 @@ def wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event
                 break
             current = current.parent
     _update_transfer_job(job_id, sync_status="synced_and_removed", removed_files=removed)
+    return True
+
+
+def mark_transfer_job_completed(job_id):
+    with jobs_lock:
+        current = jobs.get(job_id)
+        if current is not None:
+            current["status"] = "completed"
+            current["phase"] = "completed"
+            current["bytes_done"] = current.get("bytes_total", current.get("bytes_done", 0))
+            current["finished_at"] = int(time.time())
+
+
+def continue_sync_wait(job_id, completed_paths, destination, cancel_event):
+    try:
+        if wait_for_sync_and_cleanup(
+            job_id,
+            completed_paths,
+            destination,
+            cancel_event,
+            wait_seconds=SYNC_BACKGROUND_WAIT_SECONDS,
+            allow_background=False,
+        ):
+            mark_transfer_job_completed(job_id)
+    except TransferItCancelled as error:
+        _update_transfer_job(
+            job_id,
+            status="cancelled",
+            phase="cancelled",
+            error=str(error),
+            finished_at=int(time.time()),
+        )
+    except Exception as error:
+        _update_transfer_job(
+            job_id,
+            status="failed",
+            phase="failed",
+            error=str(error),
+            finished_at=int(time.time()),
+        )
 
 
 def _update_transfer_job(job_id, **updates):
@@ -352,14 +431,9 @@ def start_transfer_it_download(url, destination, password):
                     on_file_progress=on_file_progress,
                     on_file_done=on_file_done,
                 )
-            wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event)
-            with jobs_lock:
-                current = jobs.get(job_id)
-                if current is not None:
-                    current["status"] = "completed"
-                    current["phase"] = "completed"
-                    current["bytes_done"] = current.get("bytes_total", current.get("bytes_done", 0))
-                    current["finished_at"] = int(time.time())
+            if not wait_for_sync_and_cleanup(job_id, completed_paths, destination, cancel_event):
+                return
+            mark_transfer_job_completed(job_id)
         except TransferItCancelled as error:
             _update_transfer_job(
                 job_id,
